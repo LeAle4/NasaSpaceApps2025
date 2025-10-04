@@ -1,58 +1,241 @@
-"""Simple Random Forest training script.
+"""Train a Random Forest classifier on precomputed feature and label CSVs.
 
-Loads features from Modelo/data/parameters.csv and labels from Modelo/data/labels.csv,
-trains a RandomForestClassifier using parameters (if provided) and saves the model to Modelo/model.joblib.
-Prints basic classification metrics.
+This module provides a small, self-contained training script used by the
+project to fit a RandomForestClassifier on the features stored in
+`Modelo/data/parameters.csv` and the labels in `Modelo/data/labels.csv`.
+
+It exposes three main functions:
+- `load_data` - read features and labels from CSV files and normalize shapes
+- `train_save_model` - fit a RandomForest, compute basic metrics, save model
+- `main` - entrypoint that wires constants and starts training
+
+Notes:
+- This file focuses on clarity and small-scale reproducible experiments; it
+    intentionally keeps defaults simple and stores artifacts under the `Modelo`
+    folder (model file and visualizations).
 """
 from typing import Optional
 
 import pandas as pd
+import numpy as np
+import visualization
 import joblib
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score
+
+# Progress helpers: print timestamped stage/step messages
+import progress
 
 FEATURE_PATH = "data/parameters.csv"
 LABEL_PATH = "data/labels.csv"
-TEST_SIZE = 0.2
-RANDOM_STATE = 42
+MODELOUT = "model.joblib"
+VIZOUT = "viz_out"
+TEST_SIZE = 0.4
+RANDOM_STATE = 69
+KFOLDDIV = 10  # number of folds for cross-validation
 
 RF_ESTIMATORS = 100
 RF_N_JOBS = -1
 
+def visualize_model():
+    """Placeholder for future visualization helpers.
+
+    Currently visualization functions are implemented in the sibling
+    `visualization` module and are invoked from `train_save_model`. This
+    function exists as a clear extension point if additional model-level
+    visualizations or interactive outputs are required later.
+    """
+    # Intentionally left blank; visualization handled in `visualization.py`.
+    return None
+
 def load_data(features_path: str, labels_path: str):
+    """Load feature matrix X and label vector y from CSV files.
+
+    Args:
+        features_path: path to CSV containing feature columns (one row per
+                       example).
+        labels_path: path to CSV containing labels. The file may be a single
+                     column (common) or have multiple columns.
+
+    Returns:
+        X: pandas.DataFrame with features
+        y: pandas.Series or 1-D array-like with labels
+
+    Behavior:
+        If the labels CSV contains exactly one column, the column is
+        converted to a Series to simplify downstream scikit-learn usage.
+    """
+    progress.stage("data_load", f"Loading features from {features_path} and labels from {labels_path}")
+    progress.step("Reading features CSV")
     X = pd.read_csv(features_path)
+    progress.step("Reading labels CSV")
     y = pd.read_csv(labels_path)
 
-    # If labels file has a single column header, extract series
-    if y.shape[1] == 1:
+    # If the labels file only has one column (common case), convert to a
+    # pandas Series so scikit-learn receives a 1-dimensional target vector.
+    if hasattr(y, "shape") and y.shape[1] == 1:
         y = y.iloc[:, 0]
 
     return X, y
 
 def train_save_model(X, y, output_path: str, params: Optional[dict] = None):
-    params = params or {}
-    clf = RandomForestClassifier(**params)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y)
+    """Train a RandomForestClassifier, produce visualizations, and save model.
 
+    Args:
+        X: feature DataFrame
+        y: label Series/array
+        output_path: path where the trained model will be saved (joblib)
+        params: optional dict of parameters to pass to RandomForestClassifier
+
+    Actions and outputs:
+        - Splits the data into train/test using TEST_SIZE and RANDOM_STATE
+        - Trains a RandomForestClassifier with provided params
+        - Computes confusion matrix, train/test accuracy
+        - Generates several plots using the `visualization` module and
+          saves them under the `VIZOUT` directory
+        - Serializes the trained model to `output_path` using joblib
+    """
+    params = params or {}
+
+    progress.stage("training", "Starting model training")
+    # Create classifier with user-provided or default parameters
+    progress.step(f"RandomForest params: {params}")
+    clf = RandomForestClassifier(**params)
+
+    # Stratify split ensures label proportions are preserved in train/test
+    progress.step("Splitting data into train and test sets")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=y
+    )
+
+    progress.step("Fitting RandomForest on training data")
+    # Fit the model on the training partition
     clf.fit(X_train, y_train)
 
+    progress.step("Predicting on test set and computing metrics")
+    # Predict on the test set and compute metrics
     y_pred = clf.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-    print(f"Test accuracy: {acc:.4f}")
-    print("Classification report:\n", classification_report(y_test, y_pred, zero_division=0))
-    print("Confusion matrix:\n", confusion_matrix(y_test, y_pred))
+    cm = confusion_matrix(y_test, y_pred)
+    test_acc = accuracy_score(y_test, y_pred)
+    train_acc = accuracy_score(y_train, clf.predict(X_train))
 
+    # Prepare labels for confusion matrix plotting: include any label that
+    # appears in either ground truth or predictions and convert to strings
+    labels = [str(x) for x in np.unique(np.concatenate([y_test, y_pred]))]
+
+    progress.stage("visualization", "Creating and saving visualizations")
+    # Save confusion matrix figure
+    ax = visualization.plot_confusion_matrix(cm, labels=labels)
+    ax.figure.savefig(str(VIZOUT + "/confusion_matrix.png"))
+
+    # Compute cross-validation scores for additional diagnostics and save plot
+    progress.step("Computing cross-validation scores")
+    scores = visualization.compute_cv_scores(clf, X, y, cv=10)
+    ax = visualization.plot_cv_scores(scores)
+    ax.figure.savefig(str(VIZOUT + "/cv_scores.png"))
+
+    #Plot True and false positives and negatives
+    ax = visualization.plot_binary_confusion(y_test, y_pred)
+    ax.figure.savefig(str(VIZOUT + "/binary_confusion.png"))
+
+    progress.step("Plotting true-positives vs others")
+    # Plot true positives vs other predictions and save
+    ax = visualization.plot_truepositives_vs_others(y_test, y_pred)
+    ax.figure.savefig(str(VIZOUT + "/tp_vs_others.png"))
+
+    progress.step("Saving train/test accuracy plot")
+    # Visualize train vs test accuracy and save
+    ax = visualization.plot_train_test_accuracy(float(train_acc), float(test_acc))
+    ax.figure.savefig(str(VIZOUT + "/train_test_accuracy.png"))
+
+    progress.stage("persistence", "Saving trained model to disk")
+    # Persist trained model to disk and inform the user
     joblib.dump(clf, output_path)
-    print(f"Saved model to {output_path}")
+    progress.step(f"Saved model to {output_path}")
+
+
+def ten_fold_cross_validation(estimator, X, y, random_state: int = RANDOM_STATE):
+    """Run a stratified 10-fold cross-validation and return per-fold metrics.
+
+    Args:
+        estimator: an sklearn estimator (unfitted)
+        X: features (DataFrame or array)
+        y: labels (Series or array)
+        random_state: seed for the StratifiedKFold splitter
+
+    Returns:
+        results: dict with keys 'accuracy', 'precision', 'recall', 'f1'
+                 each maps to a numpy array of length 10 (per-fold scores)
+    """
+    X_arr = np.asarray(X)
+    y_arr = np.asarray(y)
+
+    skf = StratifiedKFold(n_splits=KFOLDDIV, shuffle=True, random_state=random_state)
+
+    accs = []
+    precisions = []
+    recalls = []
+    f1s = []
+
+    progress.stage("cross_validation", "Running stratified 10-fold cross-validation")
+    fold = 0
+    for train_idx, test_idx in skf.split(X_arr, y_arr):
+        X_train, X_test = X_arr[train_idx], X_arr[test_idx]
+        y_train, y_test = y_arr[train_idx], y_arr[test_idx]
+
+        fold += 1
+        progress.step(f"Starting fold {fold}/{KFOLDDIV}")
+
+        est = estimator
+        # If estimator is a class instance that was already fitted, clone is safer,
+        # but to avoid adding sklearn.base dependency we create a fresh instance when possible.
+        try:
+            from sklearn.base import clone
+            est = clone(estimator)
+        except Exception:
+            # fallback: use the provided estimator and refit (may overwrite state)
+            est = estimator
+
+        est.fit(X_train, y_train)
+        y_pred = est.predict(X_test)
+
+        accs.append(accuracy_score(y_test, y_pred))
+        # average='macro' to treat classes equally regardless of support
+        precisions.append(precision_score(y_test, y_pred, average='macro', zero_division=0))
+        recalls.append(recall_score(y_test, y_pred, average='macro', zero_division=0))
+        f1s.append(f1_score(y_test, y_pred, average='macro', zero_division=0))
+
+    results = {
+        'accuracy': np.array(accs),
+        'precision': np.array(precisions),
+        'recall': np.array(recalls),
+        'f1': np.array(f1s),
+    }
+    return results
+
+def ten_fold_test_saved_model(model_path: str, X, y):
+    """Load a saved model and run a single 10-fold evaluation using the loaded estimator.
+
+    This is a convenience wrapper that loads the joblib model and calls
+    `ten_fold_cross_validation` with it.
+
+    Returns the same dict structure as `ten_fold_cross_validation`.
+    """
+    progress.stage("load_model", f"Loading model from {model_path}")
+    clf = joblib.load(model_path)
+    progress.step("Model loaded; starting 10-fold evaluation")
+    return ten_fold_cross_validation(clf, X, y)
 
 def main():
 
     features_path = FEATURE_PATH
     labels_path = LABEL_PATH
-    model_out = "model.joblib"
+    model_out = MODELOUT
 
     X, y = load_data(features_path, labels_path)
+
+    progress.stage("pre_training", "Data loaded and ready; beginning training pipeline")
 
     # Basic parameter mapping: try to read from data/parameters.csv header 'rf_n_estimators' etc if present
     # Otherwise use a small default for quick runs
@@ -63,6 +246,16 @@ def main():
     }
 
     train_save_model(X, y, model_out, rf_params)
+    # Ensure visualization output directory exists
+    import os
+    os.makedirs(VIZOUT, exist_ok=True)
+
+    progress.stage("kfold_evaluation", "Running k-fold evaluation and saving results")
+    results = ten_fold_test_saved_model(model_out, X, y)
+    fig, axes = visualization.plotkfold_results(results)
+    fig_path = os.path.join(VIZOUT, "kfold_results.png")
+    fig.savefig(str(fig_path))
+    progress.step(f"Saved k-fold results to {fig_path}")
 
 if __name__ == "__main__":
     main()
