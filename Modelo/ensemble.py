@@ -4,7 +4,6 @@ This module provides a ready-to-adapt ensemble pipeline tailored to the
 Kepler/KOI dataset shape used in this project. It focuses on recall for the
 "confirmed" exoplanet class and includes:
 
-- Data hooks: `modify_features` and `modify_labels` (lightweight defaults).
 - Builders for base learners: RandomForest, AdaBoost (wrapping RF),
     GradientBoosting, and an MLP pipeline.
 - A `train_stack` orchestration that fits base learners, handles sample/class
@@ -36,40 +35,6 @@ from sklearn.utils.class_weight import compute_class_weight
 from sklearn.utils import compute_sample_weight
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-
-
-# ------------------ Minimal data hooks ------------------
-def modify_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize column names and return numeric feature columns.
-
-    This lightweight hook is safe to use as a default. Project-specific
-    feature engineering should replace or extend this function.
-    """
-    df = df.copy()
-    df.columns = df.columns.astype(str).str.strip()
-    drop_cols = ["kepoi_name", "kepler_name", "kepid", "koi_comment"]
-    for c in drop_cols:
-        if c in df.columns:
-            df = df.drop(columns=[c])
-    return df.select_dtypes(include=[np.number])
-
-
-def modify_labels(df: pd.DataFrame, label_col: str = "koi_disposition") -> np.ndarray:
-    """Map disposition strings to integer classes.
-
-    CONFIRMED -> 2, CANDIDATE -> 1, FALSE POSITIVE -> 0
-    Unknowns default to CANDIDATE (1).
-    """
-    df = df.copy()
-    df.columns = df.columns.astype(str).str.strip()
-    label_col_norm = label_col.strip()
-    if label_col_norm not in df.columns:
-        cols_lower = {c.lower(): c for c in df.columns}
-        if label_col_norm.lower() in cols_lower:
-            label_col_norm = cols_lower[label_col_norm.lower()]
-    labels = df[label_col_norm].astype(str).str.strip().str.upper()
-    mapping = {"CONFIRMED": 2, "CANDIDATE": 1, "FALSE POSITIVE": 0, "FALSE_POSITIVE": 0}
-    return np.asarray(labels.map(mapping).fillna(1).astype(int))
 
 # ------------------ Hyperparameter placeholders ------------------
 
@@ -114,6 +79,12 @@ GB_PARAMS: Dict[str, Any] = {
     "random_state": 42,
 }
 
+CLASS_WEIGHTS: Dict[int,float] = {
+    -1:-1.0,
+    0:0.0,
+    1:1.0
+} 
+
 # ------------------ Model builders ------------------
 
 def build_random_forest(class_weight: Optional[Dict[int, float]] = None) -> RandomForestClassifier:
@@ -129,20 +100,14 @@ def build_random_forest(class_weight: Optional[Dict[int, float]] = None) -> Rand
 
 
 def build_adaboost(base_estimator: Optional[Any] = None) -> AdaBoostClassifier:
-    """Build an AdaBoostClassifier that wraps a base estimator.
-
-    Some scikit-learn versions use `estimator=` while older ones expect
-    `base_estimator=`; the function attempts the modern API then falls back
-    to the legacy name for compatibility.
-    """
+    """Build an AdaBoostClassifier that wraps a base estimator."""
+    
     # prefer explicit base estimator (default: a RandomForest)
     if base_estimator is None:
         base_estimator = build_random_forest()
-    try:
-        return AdaBoostClassifier(estimator=base_estimator, **ADB_PARAMS)
-    except TypeError:
-        # fallback for older scikit-learn versions that expect base_estimator
-        return AdaBoostClassifier(base_estimator=base_estimator, **ADB_PARAMS)
+    
+    return AdaBoostClassifier(estimator=base_estimator, **ADB_PARAMS)
+
 
 def build_mlp(sample_weighted: bool = True) -> Pipeline:
     """Return a small pipeline wrapping StandardScaler and MLPClassifier.
@@ -156,16 +121,15 @@ def build_mlp(sample_weighted: bool = True) -> Pipeline:
     mlp = MLPClassifier(**MLP_PARAMS)
     return Pipeline([("scaler", scaler), ("mlp", mlp)])
 
-def build_gradient_boost(class_weight: Optional[Dict[int, float]] = None) -> GradientBoostingClassifier:
+def build_gradient_boost() -> GradientBoostingClassifier:
     """Return a GradientBoostingClassifier.
 
     Note: sklearn's GradientBoostingClassifier doesn't accept class_weight directly.
     If class weighting is required, consider using sample_weight during fit or
     use HistGradientBoostingClassifier (which supports class_weight in newer sklearn).
     """
-    params = GB_PARAMS.copy()
     # GradientBoostingClassifier does not accept class_weight; leave out.
-    return GradientBoostingClassifier(**params)
+    return GradientBoostingClassifier(**GB_PARAMS)
 
 # ------------------ Training / evaluation utils ------------------
 
