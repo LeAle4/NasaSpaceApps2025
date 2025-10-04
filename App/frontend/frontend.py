@@ -1,46 +1,58 @@
-from PyQt5 import QtCore, QtGui, QtWidgets
+import sys
+import PyQt5.QtCore as QtCore
+import PyQt5.QtWidgets as QtWidgets
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import *
+import pandas as pd
+
 
 
 class MainWindow(object):
     def setupUi(self, MainWindow):
-        MainWindow.setObjectName("MainWindow")
+        MainWindow.setObjectName("HopeFinder")
         MainWindow.resize(640, 480)
         
         # Widget central
-        self.centralwidget = QtWidgets.QWidget(MainWindow)
+        self.centralwidget = QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
         
         # Layout principal
-        self.mainLayout = QtWidgets.QVBoxLayout(self.centralwidget)
+        self.mainLayout = QVBoxLayout(self.centralwidget)
         self.mainLayout.setContentsMargins(0, 0, 0, 0)
         
         # QTabWidget para las pestañas
-        self.tabWidget = QtWidgets.QTabWidget(self.centralwidget)
+        self.tabWidget = QTabWidget(self.centralwidget)
         self.tabWidget.setObjectName("tabWidget")
         
         # Pestaña de Modelos
-        self.tabModelos = QtWidgets.QWidget()
+        self.tabModelos = QWidget()
         self.tabModelos.setObjectName("tabModelos")
-        self.modelosLayout = QtWidgets.QVBoxLayout(self.tabModelos)
+        self.modelosLayout = QVBoxLayout(self.tabModelos)
         
         # Aquí puedes agregar widgets específicos para la pestaña de modelos
-        self.labelModelos = QtWidgets.QLabel("Contenido de Modelos")
-        self.labelModelos.setAlignment(QtCore.Qt.AlignCenter)
+        self.labelModelos = QLabel("Import exoplanet data:")
+        self.labelModelos.setFont(QFont("Arial", 12)) 
+        self.labelModelos.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.btn_abrir_csv = QPushButton('Open data file')
+        self.btn_abrir_csv.clicked.connect(self.abrir_csv)
         self.modelosLayout.addWidget(self.labelModelos)
+        self.modelosLayout.addWidget(self.btn_abrir_csv)
+        self.modelosLayout.addStretch()
         
-        self.tabWidget.addTab(self.tabModelos, "")
+        self.tabWidget.addTab(self.tabModelos, "Model")
         
         # Pestaña de Datos
-        self.tabDatos = QtWidgets.QWidget()
+        self.tabDatos = QWidget()
         self.tabDatos.setObjectName("tabDatos")
-        self.datosLayout = QtWidgets.QVBoxLayout(self.tabDatos)
+        self.datosLayout = QVBoxLayout(self.tabDatos)
         
         # Aquí puedes agregar widgets específicos para la pestaña de datos
-        self.labelDatos = QtWidgets.QLabel("Contenido de Datos")
-        self.labelDatos.setAlignment(QtCore.Qt.AlignCenter)
+        self.labelDatos = QLabel("Contenido de Datos")
+        self.labelDatos.setAlignment(Qt.AlignCenter)
         self.datosLayout.addWidget(self.labelDatos)
         
-        self.tabWidget.addTab(self.tabDatos, "")
+        self.tabWidget.addTab(self.tabDatos, "Data")
         
         # Agregar el TabWidget al layout principal
         self.mainLayout.addWidget(self.tabWidget)
@@ -48,22 +60,15 @@ class MainWindow(object):
         MainWindow.setCentralWidget(self.centralwidget)
         
         # Barra de estado
-        self.statusbar = QtWidgets.QStatusBar(MainWindow)
+        self.statusbar = QStatusBar(MainWindow)
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
         
-        self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-    def retranslateUi(self, MainWindow):
-        _translate = QtCore.QCoreApplication.translate
-        MainWindow.setWindowTitle(_translate("MainWindow", "HopeFinder"))
-        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabModelos), 
-                                   _translate("MainWindow", "Modelos"))
-        self.tabWidget.setTabText(self.tabWidget.indexOf(self.tabDatos), 
-                                   _translate("MainWindow", "Datos"))
-        self.labelModelos.setText(_translate("MainWindow", "Contenido de Modelos"))
-        self.labelDatos.setText(_translate("MainWindow", "Contenido de Datos"))
+    def abrir_csv(self):
+        pass
+   
 
 
 if __name__ == "__main__":
