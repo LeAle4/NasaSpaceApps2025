@@ -13,11 +13,65 @@ using the returned DataFrame.
 """
 
 from typing import Optional, Tuple
-
+import pyvo as vo
 import pandas as pd
 import astropy
 from astropy.io.votable import parse
 from astropy.io import ascii
+
+# Query TAP service helper
+def query_tap_service(url: str, query: str) -> Tuple[Optional[pd.DataFrame], int, Optional[str]]:
+    """Query a TAP service and return (df, status, errmsg).
+
+    Returns (df, 1, None) on success or (None, 0, "error") on failure.
+    """
+    # Validation: parameters
+    if not url or not isinstance(url, str):
+        # Returning an empty DataFrame hides why the call failed (bad URL).
+        # Better: return (None, 0, "invalid url") to match other helpers.
+        return (None, 0, "invalid url")
+    
+    if not query or not isinstance(query, str):
+        return (None, 0, "invalid query")
+
+    # Basic URL validation
+    if not (url.startswith('http://') or url.startswith('https://')):
+        return (None, 0, "invalid url")
+
+    try:
+        # Create a TAPService - note: `pyvo` may raise various exceptions here
+        # (network errors, invalid URL, etc.). We catch them below but again
+        # returning an empty DataFrame loses the error context.
+        service = vo.dal.TAPService(url)
+
+        # pyvo's TAPService provides `search` for synchronous queries; if
+        # the object doesn't expose it something is off with the service.
+        if not hasattr(service, 'search'):
+            return (None, 0, "service not available")
+
+        # Execute the query. `service.search` can take many forms (ADQL,
+        # synchronous/asynchronous). This simple wrapper assumes the TAP
+        # endpoint supports synchronous `search(query)` calls which is not
+        # universally true. For robustness you may want to detect
+        # `service.search` signature or use `service.run_sync` where available.
+        result = service.search(query)
+
+        if result is None:
+            return (None, 0, "no results")
+
+        # Convert VO table to pandas. This step can raise for large tables or
+        # non-trivial VO types (masked arrays, unicode encoding); callers may
+        # prefer to stream or page results rather than loading everything.
+        df = result.to_table().to_pandas()
+        return df, 1, ""
+    
+    except (vo.dal.DALServiceError, vo.dal.DALQueryError, Exception) as e:
+        # Broad exception catching is convenient for scripts but hides bugs.
+        # At minimum log or return the error message so callers can act on it.
+        # For now we keep behaviour (return empty DataFrame) but annotate
+        # the code so maintainers notice this is a fragile spot.
+        # Example improvement: return None, 0, str(e)
+        return (None, 0, "invalid url")
 
 def loadtabseptable(path: str) -> Tuple[Optional[pd.DataFrame], int, Optional[str]]:
     """Load a tab-separated table file (TSV) into a pandas DataFrame.
@@ -42,7 +96,9 @@ def loadtabseptable(path: str) -> Tuple[Optional[pd.DataFrame], int, Optional[st
         df = pd.read_csv(path, sep='\t', comment= "#")
         return df, 1, None
     except Exception as e:
-        # Return the error message instead of raising so callers can handle it.
+        # Returning the exception message is good — callers can log or show
+        # the message to users. For even more robust handling consider adding
+        # retry logic or trying `engine='python'` when pandas' C engine fails.
         return None, 0, str(e)
 
 def loadvotableable(path: str) -> Tuple[Optional[pd.DataFrame], int, Optional[str]]:
@@ -64,6 +120,10 @@ def loadvotableable(path: str) -> Tuple[Optional[pd.DataFrame], int, Optional[st
             df = pd.DataFrame({name: astropy_table[name].data for name in astropy_table.colnames})
         return df, 1, None
     except Exception as e:
+        # Astropy's VOTable parser can raise for invalid XML, missing tables,
+        # or when the VOTable uses unusual datatypes. Returning the error
+        # string helps the caller debug; consider adding a dedicated
+        # `validate_votable` function if you need stricter checks.
         return None, 0, str(e)
 
 def loadcsvfile(path: str) -> Tuple[Optional[pd.DataFrame], int, Optional[str]]:
@@ -73,6 +133,10 @@ def loadcsvfile(path: str) -> Tuple[Optional[pd.DataFrame], int, Optional[str]]:
     (df, status, errmsg) tuple instead of raising exceptions.
     """
     try:
+        # Allow pandas' parsers to auto-detect dialects in most CSVs; the
+        # comment parameter is useful for NASA tables which sometimes include
+        # header metadata starting with '#'. If you still get tokenization
+        # errors, try engine='python' or explicit encoding.
         df = pd.read_csv(path, sep=',', comment= "#")
         return df, 1, None
     except Exception as e:
@@ -92,6 +156,8 @@ def loadipactable(path: str) -> Tuple[Optional[pd.DataFrame], int, Optional[str]
             # Fallback to auto-detection (slower but more flexible)
             astropy_table = ascii.read(path)
         except Exception as e:
+            # When astropy fails it often includes useful parsing info in the
+            # exception message; exposing it to callers speeds debugging.
             return None, 0, str(e)
 
     try:
@@ -106,6 +172,10 @@ if __name__ == "__main__":
     # Example usage for quick manual tests. When imported as a module the
     # functions return (df, status, errmsg) so callers can decide how to handle
     # errors programmatically.
+    # Quick manual smoke tests. The example files are not included in the
+    # repository; this block is useful locally for developers to exercise the
+    # loaders. The functions are designed to return a (df, status, errmsg)
+    # tuple but `query_url` currently returns only a DataFrame (see notes).
     df_tab, ok, msg = loadtabseptable("exampletables/example.tab")
     print(df_tab)
     print("Tab-separated table:", "OK" if ok else f"FAIL: {msg}")
