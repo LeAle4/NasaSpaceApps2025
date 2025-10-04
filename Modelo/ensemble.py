@@ -58,15 +58,15 @@ SAMPLE_WEIGHT_METHOD: str = "balanced"
 N_JOBS_DEFAULT: int = -1
 
 # Label constants (useful for readability in the rest of the module)
-LABEL_CONFIRMED: int = 2
-LABEL_CANDIDATE: int = 1
-LABEL_FALSE_POSITIVE: int = 0
+LABEL_CONFIRMED: int = 1
+LABEL_CANDIDATE: int = 0
+LABEL_FALSE_POSITIVE: int = -1
 
 # A small mapping used by some callers/tests; kept here for convenience
 CLASS_WEIGHTS: Dict[int, float] = {
-    -1: -1.0,
-    0: 1.0,
-    1: UPWEIGHT_CONFIRMED_DEFAULT,
+    LABEL_FALSE_POSITIVE: -1.0,
+    LABEL_CANDIDATE: 1.0,
+        LABEL_CONFIRMED: UPWEIGHT_CONFIRMED_DEFAULT,
 }
 
 # ------------------ Hyperparameter placeholders ------------------
@@ -171,20 +171,22 @@ def build_gradient_boost() -> GradientBoostingClassifier:
 # ------------------ Training / evaluation utils ------------------
 
 def compute_class_weights_from_y(y: np.ndarray, upweight_confirmed: float = UPWEIGHT_CONFIRMED_DEFAULT) -> Dict[int, float]:
-    """Compute class weights from labels and optionally upweight confirmed class.
+    """Compute class weights from labels and optionally upweight the confirmed class.
 
     Returns a mapping suitable for passing as ``class_weight`` to estimators
     that accept it (for example RandomForest). The baseline uses
     sklearn.utils.class_weight.compute_class_weight("balanced", ...)
-    and multiplies the weight for the CONFIRMED class (label 2) by
-    ``upweight_confirmed`` so false-negatives for confirmed planets are
+    and multiplies the weight for the confirmed class (``LABEL_CONFIRMED``)
+    by ``upweight_confirmed`` so false-negatives for confirmed planets are
     penalized more heavily.
     """
     classes = np.unique(y)
     # compute balanced class weights
     balanced = compute_class_weight(class_weight=SAMPLE_WEIGHT_METHOD, classes=classes, y=y)
     cw = {int(c): float(w) for c, w in zip(classes, balanced)}
-    cw[1] = cw[1]*upweight_confirmed
+    # multiply the weight for the confirmed class if present
+    if LABEL_CONFIRMED in cw:
+        cw[LABEL_CONFIRMED] = cw[LABEL_CONFIRMED] * upweight_confirmed
     return cw
 
 def train_stack(
@@ -197,7 +199,7 @@ def train_stack(
 ) -> Tuple[StackingClassifier, Dict[str, Any]]:
     """Orchestrate training of base learners and a stacking classifier.
 
-    Steps performed (high level):
+         The returned report emphasizes recall/AP for the CONFIRMED class (label 1).
       1. Split data into train/test using stratified sampling.
       2. Compute class weights (balanced -> upweight confirmed class).
       3. Build base estimators (RF, AdaBoost, GradientBoost, MLP pipeline).
@@ -502,7 +504,7 @@ def grid_search_rf(X, y, param_grid=None, scoring: str = "recall", cv: int = STA
     from sklearn.metrics import recall_score
 
     def recall_confirmed(y_true, y_pred):
-        return recall_score(y_true, y_pred, labels=[2], average="macro")
+        return recall_score(y_true, y_pred, labels=[1], average="macro")
 
     scorer = make_scorer(recall_confirmed)
 
