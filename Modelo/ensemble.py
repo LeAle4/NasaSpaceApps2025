@@ -36,6 +36,35 @@ from sklearn.utils import compute_sample_weight
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
+
+# Simple data hooks (ensure these functions exist for the demo and callers)
+def modify_features(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize column names and return numeric columns as features."""
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    drop_cols = ["kepoi_name", "kepler_name", "kepid", "koi_comment"]
+    for c in drop_cols:
+        if c in df.columns:
+            df = df.drop(columns=[c])
+    return df.select_dtypes(include=[np.number])
+
+
+def modify_labels(df: pd.DataFrame, label_col: str = "koi_disposition") -> np.ndarray:
+    """Map common disposition strings to integer labels used by the pipeline.
+
+    CONFIRMED -> 2, CANDIDATE -> 1, FALSE POSITIVE -> 0
+    """
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    label_col_norm = label_col.strip()
+    if label_col_norm not in df.columns:
+        cols_lower = {c.lower(): c for c in df.columns}
+        if label_col_norm.lower() in cols_lower:
+            label_col_norm = cols_lower[label_col_norm.lower()]
+    labels = df[label_col_norm].astype(str).str.strip().str.upper()
+    mapping = {"CONFIRMED": 2, "CANDIDATE": 1, "FALSE POSITIVE": 0, "FALSE_POSITIVE": 0}
+    return np.asarray(labels.map(mapping).fillna(1).astype(int))
+
 # ------------------ Hyperparameter placeholders ------------------
 
 # Random forest base params
@@ -179,64 +208,62 @@ def train_stack(
 
     The returned report emphasizes recall/AP for the CONFIRMED class (label 2).
     """
-    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=test_size, random_state=random_state)
+    # Split features/labels into train/test (stratified to preserve label ratios)
+    train_features, test_features, train_labels, test_labels = train_test_split(
+        X, y, stratify=y, test_size=test_size, random_state=random_state
+    )
 
-    # class weights
-    cw = compute_class_weights_from_y(y_train, upweight_confirmed=upweight_confirmed)
+    # class weights (use balanced weights then upweight the confirmed class)
+    class_weights = compute_class_weights_from_y(train_labels, upweight_confirmed=upweight_confirmed)
 
-    rf = build_random_forest(class_weight=cw)
-    adb = build_adaboost(base_estimator=build_random_forest(class_weight=cw))
-    gb = build_gradient_boost()
-    mlp_pipe = build_mlp(sample_weighted=True)
+    # Build base learners using descriptive names
+    rf_clf = build_random_forest(class_weight=class_weights)
+    adb_clf = build_adaboost(base_estimator=build_random_forest(class_weight=class_weights))
+    gb_clf = build_gradient_boost()
+    mlp_pipeline = build_mlp(sample_weighted=True)
 
-    estimators = [("rf", rf), ("adb", adb), ("gb", gb), ("mlp", mlp_pipe)]
+    estimators = [("rf", rf_clf), ("adb", adb_clf), ("gb", gb_clf), ("mlp", mlp_pipeline)]
 
     stack = StackingClassifier(estimators=estimators, **STACK_PARAMS)
 
-    # compute sample weights for mlp if desired
-    sample_w = compute_sample_weight(class_weight="balanced", y=y_train)
-    # upweight confirmed samples further if desired
-    sample_w = np.where(y_train == 2, sample_w * upweight_confirmed, sample_w)
+    # compute sample weights for MLP if desired (used for resampling fallback)
+    sample_weights = compute_sample_weight(class_weight="balanced", y=train_labels)
+    # upweight confirmed samples further if requested
+    sample_weights = np.where(train_labels == 2, sample_weights * upweight_confirmed, sample_weights)
 
-    # Fit base estimators separately when they accept sample_weight in fit
-    # RandomForest and AdaBoost accept class_weight/sample_weight internally when constructed
-    rf.fit(X_train, y_train)
-    adb.fit(X_train, y_train)
-    # GradientBoostingClassifier doesn't accept class_weight; use sample weights if desired
+    # Fit base estimators separately when they accept class_weight/sample_weight
+    rf_clf.fit(train_features, train_labels)
+    adb_clf.fit(train_features, train_labels)
+    # GradientBoostingClassifier doesn't accept class_weight; attempt sample_weight if signature allows
     try:
-        gb.fit(X_train, y_train)
+        gb_clf.fit(train_features, train_labels)
     except TypeError:
-        # try fitting with sample weights if signature requires it
         try:
-            gb.fit(X_train, y_train, sample_weight=compute_sample_weight(class_weight="balanced", y=y_train))
+            gb_clf.fit(train_features, train_labels, sample_weight=compute_sample_weight(class_weight="balanced", y=train_labels))
         except Exception:
-            # fallback: fit without sample weights
-            gb.fit(X_train, y_train)
+            gb_clf.fit(train_features, train_labels)
 
-    # For older sklearn MLP implementations that do not accept sample_weight
-    # in MLP.fit, we fall back to resampling the training set with replacement.
-    # The resampling probabilities are proportional to a computed sample weight
-    # vector so higher-weighted examples appear more often in the MLP training set.
-    def _resample_by_weight(Xa, ya, weights, n_samples=None, random_state=42):
+    # For older sklearn MLP implementations that do not accept `sample_weight` we
+    # resample the training set with replacement using sample_weights as probabilities.
+    def _resample_by_weight(features_df, labels_arr, weights_arr, n_samples=None, random_state=42):
         if n_samples is None:
-            n_samples = len(ya)
+            n_samples = len(labels_arr)
         rng = np.random.RandomState(random_state)
-        probs = weights.astype(float) / float(np.sum(weights))
-        idx = rng.choice(len(ya), size=n_samples, replace=True, p=probs)
-        return Xa.iloc[idx, :].values if hasattr(Xa, 'iloc') else Xa[idx], ya[idx]
+        probs = weights_arr.astype(float) / float(np.sum(weights_arr))
+        idx = rng.choice(len(labels_arr), size=n_samples, replace=True, p=probs)
+        return features_df.iloc[idx, :].values if hasattr(features_df, 'iloc') else features_df[idx], labels_arr[idx]
 
-    X_mlp, y_mlp = _resample_by_weight(X_train, y_train, sample_w, n_samples=len(y_train), random_state=42)
-    mlp_pipe.fit(X_mlp, y_mlp)
+    mlp_features, mlp_labels = _resample_by_weight(train_features, train_labels, sample_weights, n_samples=len(train_labels), random_state=42)
+    mlp_pipeline.fit(mlp_features, mlp_labels)
 
-    # Now fit stacking (it will re-fit underlying estimators by default). To avoid refitting,
-    # set passthrough or re-use fitted estimators. For simplicity we allow refit here but pass
-    # `n_jobs=1` to avoid nested parallelism issues.
+    # Now fit the stacking classifier on the training set. We set `n_jobs=1` to
+    # avoid nested parallelism issues that can arise when base learners run in parallel.
     stack.set_params(n_jobs=1)
-    stack.fit(X_train, y_train)
+    stack.fit(train_features, train_labels)
 
     # Evaluation
-    y_pred = stack.predict(X_test)
-    y_proba = stack.predict_proba(X_test)
+    y_pred = stack.predict(test_features)
+    y_proba = stack.predict_proba(test_features)
 
     # Identify index of confirmed class (2) in classes_
     classes = stack.classes_
@@ -245,7 +272,7 @@ def train_stack(
     except ValueError:
         idx_confirmed = None
 
-    recall = recall_score(y_test, y_pred, labels=[2], average="macro") if idx_confirmed is not None else None
+    recall = recall_score(test_labels, y_pred, labels=[2], average="macro") if idx_confirmed is not None else None
 
     # Precision-recall for confirmed class
     if idx_confirmed is not None:
@@ -256,16 +283,16 @@ def train_stack(
             proba_confirmed = y_proba_arr
         else:
             proba_confirmed = y_proba_arr[:, idx_confirmed]
-        precision, recall_vals, thresholds = precision_recall_curve((y_test == 2).astype(int), proba_confirmed)
-        ap = average_precision_score((y_test == 2).astype(int), proba_confirmed)
+        precision, recall_vals, thresholds = precision_recall_curve((test_labels == 2).astype(int), proba_confirmed)
+        ap = average_precision_score((test_labels == 2).astype(int), proba_confirmed)
     else:
         precision, recall_vals, thresholds, ap = None, None, None, None
 
     report = {
         "recall_confirmed": recall,
         "average_precision_confirmed": ap,
-        "classification_report": classification_report(y_test, y_pred, output_dict=True),
-        "confusion_matrix": confusion_matrix(y_test, y_pred).tolist(),
+        "classification_report": classification_report(test_labels, y_pred, output_dict=True),
+        "confusion_matrix": confusion_matrix(test_labels, y_pred).tolist(),
     }
 
     # Compute stratified 10-fold CV metrics for the confirmed class as an additional important metric
