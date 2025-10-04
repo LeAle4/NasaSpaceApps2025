@@ -82,7 +82,7 @@ GB_PARAMS: Dict[str, Any] = {
 CLASS_WEIGHTS: Dict[int,float] = {
     -1:-1.0,
     0:0.0,
-    1:1.0
+    1:10.0
 } 
 
 # ------------------ Model builders ------------------
@@ -133,7 +133,7 @@ def build_gradient_boost() -> GradientBoostingClassifier:
 
 # ------------------ Training / evaluation utils ------------------
 
-def compute_class_weights_from_y(y: np.ndarray, upweight_confirmed: float = 10.0) -> Dict[int, float]:
+def compute_class_weights_from_y(y: np.ndarray, upweight_confirmed: float = CLASS_WEIGHTS[1]) -> Dict[int, float]:
     """Compute class weights from labels and optionally upweight confirmed class.
 
     Returns a mapping suitable for passing as ``class_weight`` to estimators
@@ -147,8 +147,7 @@ def compute_class_weights_from_y(y: np.ndarray, upweight_confirmed: float = 10.0
     # compute balanced class weights
     balanced = compute_class_weight(class_weight="balanced", classes=classes, y=y)
     cw = {int(c): float(w) for c, w in zip(classes, balanced)}
-    if 2 in cw:
-        cw[2] = cw[2] * upweight_confirmed
+    cw[1] = cw[1]*upweight_confirmed
     return cw
 
 def train_stack(
@@ -156,7 +155,7 @@ def train_stack(
     y: np.ndarray,
     test_size: float = 0.2,
     random_state: int = 42,
-    upweight_confirmed: float = 10.0,
+    upweight_confirmed: float = CLASS_WEIGHTS[1],
 ) -> Tuple[StackingClassifier, Dict[str, Any]]:
     """Orchestrate training of base learners and a stacking classifier.
 
