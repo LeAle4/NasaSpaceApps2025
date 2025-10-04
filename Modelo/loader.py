@@ -3,7 +3,7 @@ import astropy
 from astropy.io.votable import parse
 from astropy.io import ascii
 
-def loadtabseptable(path: str) -> pandas.DataFrame:
+def loadtabseptable(path: str):
     """Load a tab-separated table file and return a pandas DataFrame.
 
     Parameters
@@ -22,12 +22,12 @@ def loadtabseptable(path: str) -> pandas.DataFrame:
         If pandas fails to read the file.
     """
     try:
-        # pandas.read_table uses '\t' by default, but be explicit
-        return pandas.read_table(path, sep='\t')
-    except Exception as e:
-        raise IOError(f"Could not read tab-separated file from {path}: {e}")
+        df = pandas.read_table(path, sep='\t')
+        return df, 1
+    except Exception:
+        return None, 0
 
-def loadvotable(path: str) -> pandas.DataFrame:
+def loadvotable(path: str):
     """Read a VOTable and return a pandas DataFrame.
 
     Raises IOError on failure.
@@ -36,14 +36,14 @@ def loadvotable(path: str) -> pandas.DataFrame:
         votable_obj = parse(path)
         astropy_table = votable_obj.get_first_table().to_table(use_names_over_ids=True)
         try:
-            return astropy_table.to_pandas()
+            df = astropy_table.to_pandas()
         except Exception:
-            # Fallback if astropy lacks to_pandas
-            return pandas.DataFrame({name: astropy_table[name].data for name in astropy_table.colnames})
-    except Exception as e:
-        raise IOError(f"Could not read VOTable from {path}: {e}")
+            df = pandas.DataFrame({name: astropy_table[name].data for name in astropy_table.colnames})
+        return df, 1
+    except Exception:
+        return None, 0
 
-def loadcsvfile(path: str) -> pandas.DataFrame:
+def loadcsvfile(path: str):
     """Load a CSV file into a pandas DataFrame with a clear error on failure.
 
     Parameters
@@ -62,11 +62,12 @@ def loadcsvfile(path: str) -> pandas.DataFrame:
         If pandas fails to read the CSV file.
     """
     try:
-        return pandas.read_csv(path)
-    except Exception as e:
-        raise IOError(f"Could not read CSV file from {path}: {e}")
+        df = pandas.read_csv(path)
+        return df, 1
+    except Exception:
+        return None, 0
 
-def loadipactable(path: str) -> pandas.DataFrame:
+def loadipactable(path: str):
     """Read an IPAC-format table and return a pandas DataFrame.
 
     Tries astropy.io.ascii with format='ipac' then falls back to auto-detect.
@@ -77,36 +78,26 @@ def loadipactable(path: str) -> pandas.DataFrame:
     except Exception:
         try:
             astropy_table = ascii.read(path)
-        except Exception as e:
-            raise IOError(f"Could not read IPAC table from {path}: {e}")
+        except Exception:
+            return None, 0
 
     try:
-        return astropy_table.to_pandas()
+        df = astropy_table.to_pandas()
     except Exception:
-        return pandas.DataFrame({name: astropy_table[name].data for name in astropy_table.colnames})
+        df = pandas.DataFrame({name: astropy_table[name].data for name in astropy_table.colnames})
+
+    return df, 1
 
 if __name__ == "__main__":
     # Example usage (for testing purposes)
-    try:
-        df_tab = loadtabseptable("example_tab.txt")
-        print("Tab-separated table loaded successfully.")
-    except IOError as e:
-        print(e)
+    df_tab, ok = loadtabseptable("example_tab.txt")
+    print("Tab-separated table:", "OK" if ok else "FAIL")
 
-    try:
-        df_vot = loadvotable("example.vot")
-        print("VOTable loaded successfully.")
-    except IOError as e:
-        print(e)
+    df_vot, ok = loadvotable("example.vot")
+    print("VOTable:", "OK" if ok else "FAIL")
 
-    try:
-        df_csv = loadcsvfile("example.csv")
-        print("CSV file loaded successfully.")
-    except IOError as e:
-        print(e)
+    df_csv, ok = loadcsvfile("example.csv")
+    print("CSV:", "OK" if ok else "FAIL")
 
-    try:
-        df_ipac = loadipactable("example.ipac")
-        print("IPAC table loaded successfully.")
-    except IOError as e:
-        print(e)
+    df_ipac, ok = loadipactable("example.ipac")
+    print("IPAC:", "OK" if ok else "FAIL")
