@@ -20,4 +20,5 @@ if __name__ == '__main__':
     prediction_batch = PredictionBatch()
     prediction_batch.readCsvData("C:\\Users\\ADMIN\\Desktop\\Vicente\\Sistemas coheteria\\NasaSpaceApps2025\\Modelo\\koi_exoplanets.csv")
     
+    #hola
     
