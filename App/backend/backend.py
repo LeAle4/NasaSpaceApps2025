@@ -3,14 +3,18 @@ import parameters as p
 
 class PredictionBatch():
     def __init__(self):
-        self.exoplanetDict = dict()
+        self.BatchDataFrame = None
+        
     
     def readCsvData(self, path: str):
         try:
             datafile = pd.read_csv(path, usecols=p.DATA_HEADERS)
-            print('Data leida correctamente')
         except Exception as e:
             print(e)
+        
+        self.batchDataFrame = datafile
+        
+        
         
 class Exoplanet():
     def __init__(self):
