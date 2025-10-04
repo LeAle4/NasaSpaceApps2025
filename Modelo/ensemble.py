@@ -38,7 +38,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from sklearn.utils import compute_sample_weight
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-from Modelo import visualization as viz
+import visualization as viz
 
 try:
     import matplotlib.pyplot as plt
