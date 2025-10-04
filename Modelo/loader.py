@@ -106,18 +106,18 @@ if __name__ == "__main__":
     # Example usage for quick manual tests. When imported as a module the
     # functions return (df, status, errmsg) so callers can decide how to handle
     # errors programmatically.
-    df_tab, ok, msg = loadtabseptable("example.tab")
+    df_tab, ok, msg = loadtabseptable("exampletables/example.tab")
     print(df_tab)
     print("Tab-separated table:", "OK" if ok else f"FAIL: {msg}")
 
-    df_votable, ok, msg = loadvotableable("example.votable")
+    df_votable, ok, msg = loadvotableable("exampletables/example.votable")
     print(df_votable)
     print("VOTable:", "OK" if ok else f"FAIL: {msg}")
 
-    df_csv, ok, msg = loadcsvfile("example.csv")
+    df_csv, ok, msg = loadcsvfile("exampletables/example.csv")
     print(df_csv)
     print("CSV:", "OK" if ok else f"FAIL: {msg}")
 
-    df_ipac, ok, msg = loadipactable("example.tbl")
+    df_ipac, ok, msg = loadipactable("exampletables/example.tbl")
     print(df_ipac)
     print("IPAC:", "OK" if ok else f"FAIL: {msg}")
