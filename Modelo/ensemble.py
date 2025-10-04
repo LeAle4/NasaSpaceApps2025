@@ -38,8 +38,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from sklearn.utils import compute_sample_weight
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
-import io
-import base64
+from Modelo import visualization as viz
 
 try:
     import matplotlib.pyplot as plt
@@ -360,78 +359,26 @@ def train_stack(
         except Exception:
             gb_importances = None
 
-        # Helper: convert Matplotlib figure to base64 PNG
-        def _fig_to_base64(fig):
-            if plt is None:
-                return None
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", bbox_inches="tight")
-            plt.close(fig)
-            buf.seek(0)
-            return base64.b64encode(buf.read()).decode("ascii")
-
         plots = {}
-        # PR curve plot
+        # Use visualization helpers to produce base64 PNGs
         try:
-            if plt is not None and precision is not None and recall_vals is not None:
-                fig, ax = plt.subplots()
-                ax.plot(recall_vals, precision, label=f"AP={ap:.3f}")
-                ax.set_xlabel("Recall")
-                ax.set_ylabel("Precision")
-                ax.set_title("Precision-Recall (confirmed)")
-                ax.legend()
-                plots["pr_curve"] = _fig_to_base64(fig)
+            plots["pr_curve"] = viz.plot_pr_curve(precision, recall_vals, ap)
         except Exception:
             plots["pr_curve"] = None
-
-        # ROC curve plot
         try:
-            if plt is not None and fpr is not None and tpr is not None:
-                fig, ax = plt.subplots()
-                ax.plot(fpr, tpr, label=f"AUC={roc_auc:.3f}")
-                ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
-                ax.set_xlabel("False Positive Rate")
-                ax.set_ylabel("True Positive Rate")
-                ax.set_title("ROC Curve (confirmed)")
-                ax.legend()
-                plots["roc_curve"] = _fig_to_base64(fig)
+            plots["roc_curve"] = viz.plot_roc_curve(fpr, tpr, roc_auc)
         except Exception:
             plots["roc_curve"] = None
-
-        # Calibration curve plot
         try:
-            if plt is not None and prob_true is not None and prob_pred is not None:
-                fig, ax = plt.subplots()
-                ax.plot(prob_pred, prob_true, marker="o")
-                ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
-                ax.set_xlabel("Mean predicted probability")
-                ax.set_ylabel("Fraction of positives")
-                ax.set_title("Calibration curve (confirmed)")
-                plots["calibration_curve"] = _fig_to_base64(fig)
+            plots["calibration_curve"] = viz.plot_calibration_curve(prob_true, prob_pred)
         except Exception:
             plots["calibration_curve"] = None
-
-        # Feature importances plots (top 20)
         try:
-            if plt is not None and rf_importances:
-                names, vals = zip(*rf_importances[:20])
-                fig, ax = plt.subplots(figsize=(8, max(3, len(names) * 0.25)))
-                ax.barh(range(len(names)), vals[::-1])
-                ax.set_yticks(range(len(names)))
-                ax.set_yticklabels(list(names)[::-1])
-                ax.set_title("RandomForest feature importances (top)")
-                plots["rf_feature_importances"] = _fig_to_base64(fig)
+            plots["rf_feature_importances"] = viz.plot_feature_importances(rf_importances, title="RandomForest feature importances (top)")
         except Exception:
             plots["rf_feature_importances"] = None
         try:
-            if plt is not None and gb_importances:
-                names, vals = zip(*gb_importances[:20])
-                fig, ax = plt.subplots(figsize=(8, max(3, len(names) * 0.25)))
-                ax.barh(range(len(names)), vals[::-1])
-                ax.set_yticks(range(len(names)))
-                ax.set_yticklabels(list(names)[::-1])
-                ax.set_title("GradientBoost feature importances (top)")
-                plots["gb_feature_importances"] = _fig_to_base64(fig)
+            plots["gb_feature_importances"] = viz.plot_feature_importances(gb_importances, title="GradientBoost feature importances (top)")
         except Exception:
             plots["gb_feature_importances"] = None
     else:
