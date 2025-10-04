@@ -32,10 +32,19 @@ from sklearn.metrics import (
     classification_report,
     confusion_matrix,
 )
+from sklearn.metrics import roc_curve, roc_auc_score
+from sklearn.calibration import calibration_curve
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.utils import compute_sample_weight
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
+import io
+import base64
+
+try:
+    import matplotlib.pyplot as plt
+except Exception:
+    plt = None
 
 
 # ------------------ Module-level defaults / constants ------------------
@@ -47,11 +56,12 @@ UPWEIGHT_CONFIRMED_DEFAULT: float = 10.0
 STACK_CV_DEFAULT: int = 5
 CV10_SPLITS_DEFAULT: int = 10
 SAMPLE_WEIGHT_METHOD: str = "balanced"
+N_JOBS_DEFAULT: int = -1
 
 # Label constants (useful for readability in the rest of the module)
-LABEL_CONFIRMED: int = 1
-LABEL_CANDIDATE: int = 0
-LABEL_FALSE_POSITIVE: int = -1
+LABEL_CONFIRMED: int = 2
+LABEL_CANDIDATE: int = 1
+LABEL_FALSE_POSITIVE: int = 0
 
 # A small mapping used by some callers/tests; kept here for convenience
 CLASS_WEIGHTS: Dict[int, float] = {
@@ -67,6 +77,7 @@ RF_PARAMS: Dict[str, Any] = {
     "n_estimators": 200,
     "max_depth": None,
     "random_state": RANDOM_STATE,
+    "n_jobs": N_JOBS_DEFAULT,
     # class_weight left empty here; compute and pass during training where available
 }
 
@@ -103,11 +114,7 @@ GB_PARAMS: Dict[str, Any] = {
     "random_state": RANDOM_STATE,
 }
 
-CLASS_WEIGHTS: Dict[int,float] = {
-    -1:-1.0,
-    0:0.0,
-    1:10.0
-} 
+# (CLASS_WEIGHTS already defined above to use the centralized UPWEIGHT_CONFIRMED_DEFAULT)
 
 # ------------------ Model builders ------------------
 
@@ -232,10 +239,10 @@ def train_stack(
 
     stack = StackingClassifier(estimators=estimators, **STACK_PARAMS)
 
-    # compute sample weights for MLP if desired (used for resampling fallback)
-    sample_weights = compute_sample_weight(class_weight=SAMPLE_WEIGHT_METHOD, y=train_labels)
+    # compute sample weights once and reuse (used for MLP and GB fallback)
+    base_sample_weights = compute_sample_weight(class_weight=SAMPLE_WEIGHT_METHOD, y=train_labels)
     # upweight confirmed samples further if requested
-    sample_weights = np.where(train_labels == LABEL_CANDIDATE, sample_weights * upweight_confirmed, sample_weights)
+    sample_weights = np.where(train_labels == LABEL_CANDIDATE, base_sample_weights * upweight_confirmed, base_sample_weights)
 
     # Fit base estimators separately when they accept class_weight/sample_weight
     if verbose:
@@ -257,7 +264,7 @@ def train_stack(
         gb_clf.fit(train_features, train_labels)
     except TypeError:
         try:
-            gb_clf.fit(train_features, train_labels, sample_weight=compute_sample_weight(class_weight=SAMPLE_WEIGHT_METHOD, y=train_labels))
+            gb_clf.fit(train_features, train_labels, sample_weight=base_sample_weights)
         except Exception:
             gb_clf.fit(train_features, train_labels)
     if verbose:
@@ -301,7 +308,9 @@ def train_stack(
 
     recall = recall_score(test_labels, y_pred, labels=[LABEL_CONFIRMED], average="macro") if idx_confirmed is not None else None
 
-    # Precision-recall for confirmed class
+    # Precision-recall for confirmed class - cache boolean masks for reuse
+    confirmed_mask_test = (test_labels == LABEL_CONFIRMED)
+    confirmed_mask_train = (train_labels == LABEL_CONFIRMED)
     if idx_confirmed is not None:
         # ensure y_proba is a numpy array
         y_proba_arr = np.asarray(y_proba)
@@ -310,10 +319,127 @@ def train_stack(
             proba_confirmed = y_proba_arr
         else:
             proba_confirmed = y_proba_arr[:, idx_confirmed]
-        precision, recall_vals, thresholds = precision_recall_curve((test_labels == LABEL_CONFIRMED).astype(int), proba_confirmed)
-        ap = average_precision_score((test_labels == LABEL_CONFIRMED).astype(int), proba_confirmed)
+
+        precision, recall_vals, thresholds = precision_recall_curve(confirmed_mask_test.astype(int), proba_confirmed)
+        ap = average_precision_score(confirmed_mask_test.astype(int), proba_confirmed)
+
+        # Additional diagnostics: ROC/AUC, calibration curve, feature importances and plots
+        try:
+            fpr, tpr, roc_thresh = roc_curve(confirmed_mask_test.astype(int), proba_confirmed)
+            roc_auc = roc_auc_score(confirmed_mask_test.astype(int), proba_confirmed)
+        except Exception:
+            fpr = tpr = roc_thresh = roc_auc = None
+
+        try:
+            prob_true, prob_pred = calibration_curve(confirmed_mask_test.astype(int), proba_confirmed, n_bins=10)
+        except Exception:
+            prob_true = prob_pred = None
+
+        # Feature importances from tree-based base learners (if available)
+        feature_names = None
+        try:
+            if hasattr(train_features, "columns"):
+                feature_names = list(train_features.columns)
+            else:
+                feature_names = [f"f{i}" for i in range(train_features.shape[1])]
+        except Exception:
+            feature_names = None
+
+        rf_importances = None
+        gb_importances = None
+        try:
+            if hasattr(rf_clf, "feature_importances_") and feature_names is not None:
+                vals = list(rf_clf.feature_importances_)
+                rf_importances = sorted(zip(feature_names, vals), key=lambda x: x[1], reverse=True)
+        except Exception:
+            rf_importances = None
+        try:
+            if hasattr(gb_clf, "feature_importances_") and feature_names is not None:
+                vals = list(gb_clf.feature_importances_)
+                gb_importances = sorted(zip(feature_names, vals), key=lambda x: x[1], reverse=True)
+        except Exception:
+            gb_importances = None
+
+        # Helper: convert Matplotlib figure to base64 PNG
+        def _fig_to_base64(fig):
+            if plt is None:
+                return None
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight")
+            plt.close(fig)
+            buf.seek(0)
+            return base64.b64encode(buf.read()).decode("ascii")
+
+        plots = {}
+        # PR curve plot
+        try:
+            if plt is not None and precision is not None and recall_vals is not None:
+                fig, ax = plt.subplots()
+                ax.plot(recall_vals, precision, label=f"AP={ap:.3f}")
+                ax.set_xlabel("Recall")
+                ax.set_ylabel("Precision")
+                ax.set_title("Precision-Recall (confirmed)")
+                ax.legend()
+                plots["pr_curve"] = _fig_to_base64(fig)
+        except Exception:
+            plots["pr_curve"] = None
+
+        # ROC curve plot
+        try:
+            if plt is not None and fpr is not None and tpr is not None:
+                fig, ax = plt.subplots()
+                ax.plot(fpr, tpr, label=f"AUC={roc_auc:.3f}")
+                ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
+                ax.set_xlabel("False Positive Rate")
+                ax.set_ylabel("True Positive Rate")
+                ax.set_title("ROC Curve (confirmed)")
+                ax.legend()
+                plots["roc_curve"] = _fig_to_base64(fig)
+        except Exception:
+            plots["roc_curve"] = None
+
+        # Calibration curve plot
+        try:
+            if plt is not None and prob_true is not None and prob_pred is not None:
+                fig, ax = plt.subplots()
+                ax.plot(prob_pred, prob_true, marker="o")
+                ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
+                ax.set_xlabel("Mean predicted probability")
+                ax.set_ylabel("Fraction of positives")
+                ax.set_title("Calibration curve (confirmed)")
+                plots["calibration_curve"] = _fig_to_base64(fig)
+        except Exception:
+            plots["calibration_curve"] = None
+
+        # Feature importances plots (top 20)
+        try:
+            if plt is not None and rf_importances:
+                names, vals = zip(*rf_importances[:20])
+                fig, ax = plt.subplots(figsize=(8, max(3, len(names) * 0.25)))
+                ax.barh(range(len(names)), vals[::-1])
+                ax.set_yticks(range(len(names)))
+                ax.set_yticklabels(list(names)[::-1])
+                ax.set_title("RandomForest feature importances (top)")
+                plots["rf_feature_importances"] = _fig_to_base64(fig)
+        except Exception:
+            plots["rf_feature_importances"] = None
+        try:
+            if plt is not None and gb_importances:
+                names, vals = zip(*gb_importances[:20])
+                fig, ax = plt.subplots(figsize=(8, max(3, len(names) * 0.25)))
+                ax.barh(range(len(names)), vals[::-1])
+                ax.set_yticks(range(len(names)))
+                ax.set_yticklabels(list(names)[::-1])
+                ax.set_title("GradientBoost feature importances (top)")
+                plots["gb_feature_importances"] = _fig_to_base64(fig)
+        except Exception:
+            plots["gb_feature_importances"] = None
     else:
-        precision, recall_vals, thresholds, ap = None, None, None, None
+        precision = recall_vals = thresholds = ap = None
+        fpr = tpr = roc_thresh = roc_auc = None
+        prob_true = prob_pred = None
+        rf_importances = gb_importances = None
+        plots = {}
 
     report = {
         "recall_confirmed": recall,
@@ -321,6 +447,21 @@ def train_stack(
         "classification_report": classification_report(test_labels, y_pred, output_dict=True),
         "confusion_matrix": confusion_matrix(test_labels, y_pred).tolist(),
     }
+
+    # Attach diagnostic arrays and plots to the report for downstream analysis
+    report.update({
+        "pr_curve": {"precision": None if precision is None else precision.tolist(),
+                      "recall": None if recall_vals is None else recall_vals.tolist(),
+                      "thresholds": None if thresholds is None else thresholds.tolist()},
+        "roc": {"fpr": None if fpr is None else fpr.tolist(),
+                "tpr": None if tpr is None else tpr.tolist(),
+                "thresholds": None if roc_thresh is None else roc_thresh.tolist(),
+                "auc": roc_auc},
+        "calibration": {"prob_true": None if prob_true is None else prob_true.tolist(),
+                        "prob_pred": None if prob_pred is None else prob_pred.tolist()},
+        "feature_importances": {"rf": rf_importances, "gb": gb_importances},
+        "plots": plots,
+    })
 
     # Compute stratified 10-fold CV metrics for the confirmed class as an additional important metric
     def cv_metrics_10fold(X_all, y_all, estimators, n_splits=CV10_SPLITS_DEFAULT, random_state=RANDOM_STATE):
