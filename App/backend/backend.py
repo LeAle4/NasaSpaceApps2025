@@ -2,9 +2,33 @@ import pandas as pd
 import parameters as p
 import os
 
-class PredictionBatch():
+class CurrentSesion():
     def __init__(self):
+        self.currentBatches = dict()
+        self.database = None
+    
+    def newPredictionBatch(self, path):
+        new_batch = PredictionBatch()
+        self.currentBatches[new_batch.id] = new_batch
+    
+    def init_database(self):
+        # Inicializa la base de datos.
+        database = Database()
+        database.loadAllDatabase()
+        self.database = database
+    
+    def addBatchToDatabase(self, batch_id: int):
+        # Agrega un batch a la a la base de datos.
+        pass
+
+class PredictionBatch():
+    _id_counter = 0
+    def __init__(self):
+        PredictionBatch._id_counter += 1
+        self.id = PredictionBatch.id_counter 
         self.batchDataFrame = None
+        self.confirmedExoplanets = None
+        self.rejectedExoplanets = None
         
     
     def readCsvData(self, path: str):
@@ -28,11 +52,27 @@ class PredictionBatch():
         except Exception as e:
             print(f"Error loading CSV: {e}")
             self.batchDataFrame = None
+    
+    def predictBatch(self):
+        #Este metodo es ejecutado despues de cargar los datos. Ejecuta el modelo de predicción de exoplanetas y devuelve su veredicto.
+        #Retorna: exoplanetas confirmados, exoplanetas rechazados.
+        pass
         
         
         
-class Exoplanet():
+class Database():
+    # Esta clase contiene la data de todas las predicciones que se han hecho. Su información se guardará en un archivo
+    # Y se cargará automaticamente cada vez que se inicia el programa.
+    # Cada vez que se ejecuta una nuevo lote de predicciones (PredictionBatch) existirá la posibilidad de añadirlo a la 
+    # base de datos general. Esta base de datos general se almacenará en un archivo de modo que su información no se pierda
+    # al reiniciar el programa 
     def __init__(self):
+        self.allData = None
+    
+    def loadAllDatabase(self):
+        pass
+    
+    def addBatchToDatabase(self, batch_id: int):
         pass
     
 if __name__ == '__main__':
