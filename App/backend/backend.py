@@ -109,6 +109,7 @@ class PredictionBatch():
         #Este método es ejecutado después de cargar los datos. Ejecuta el modelo de predicción de exoplanetas y devuelve su veredicto.
         #Retorna: exoplanetas confirmados, exoplanetas rechazados.
         if self.batchDataFrame is None:
+            #Take batch, predict everyting, actualizar los dataframes de confirmados y rechazados
             print("Error: No hay datos cargados. Ejecuta readCsvData() primero.")
             return ["error", "Error: No hay datos cargados. Ejecuta readCsvData() primero."]
         
