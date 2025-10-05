@@ -1,19 +1,11 @@
-# In parameters.py
-DATA_HEADERS = [
-    'kepid', 'kepoi_name', 'kepler_name', 'ra', 'dec', 
-    'koi_disposition', 'koi_pdisposition', 'koi_period', 
-    'koi_period_err1', 'koi_period_err2', 'koi_time0bk', 
-    'koi_time0bk_err1', 'koi_time0bk_err2', 'koi_impact', 
-    'koi_impact_err1', 'koi_impact_err2', 'koi_duration', 
-    'koi_duration_err1', 'koi_duration_err2', 'koi_depth', 
-    'koi_depth_err1', 'koi_depth_err2', 'koi_prad', 
-    'koi_prad_err1', 'koi_prad_err2', 'koi_teq', 
-    'koi_teq_err1', 'koi_teq_err2', 'koi_insol', 
-    'koi_insol_err1', 'koi_insol_err2', 'koi_model_snr', 
-    'koi_steff', 'koi_steff_err1', 'koi_steff_err2', 
-    'koi_slogg', 'koi_slogg_err1', 'koi_slogg_err2', 
-    'koi_smet', 'koi_smet_err1', 'koi_smet_err2', 
-    'koi_srad', 'koi_srad_err1', 'koi_srad_err2'
-]
-
-#hols
+DATA_HEADERS = ['ra', 'dec', 'koi_gmag', 'koi_count', 'koi_num_transits',
+       'koi_max_mult_ev', 'koi_bin_oedp_sig', 'koi_ldm_coeff1',
+       'koi_model_snr', 'koi_prad', 'koi_impact', 'koi_duration', 'koi_depth',
+       'koi_dor', 'koi_incl', 'koi_teq', 'koi_steff', 'koi_slogg', 'koi_smet',
+       'koi_srad', 'koi_smass', 'koi_fwm_stat_sig', 'koi_fwm_srao',
+       'koi_fwm_sdeco', 'koi_fwm_prao', 'koi_fwm_pdeco', 'koi_dicco_mra',
+       'koi_dicco_mdec', 'koi_dicco_msky', 'koi_tce_plnt_num', 'koi_time0',
+       'koi_fpflag_nt', 'koi_fpflag_ss', 'koi_fpflag_co', 'koi_fpflag_ec',
+       'koi_insol', 'koi_srho']
+#hola
+DATA_VISUALIZATION = ['kepid','koi_period','koi_time0bk','koi_smass','koi_srad','koi_prad','koi_sma','koi_eccen','koi_incl','koi_longp','koi_steff']
