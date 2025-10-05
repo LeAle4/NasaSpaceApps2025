@@ -161,9 +161,8 @@ class MainWindow(QMainWindow):
         
         # Store orbit visualization windows
         self.orbit_windows = []
-        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logo.png')
-        self.setWindowIcon(QIcon(icon_path))
         
+        self.setup_window_properties()
         self.setupUi()
         
     def setupUi(self):
@@ -732,6 +731,33 @@ class MainWindow(QMainWindow):
         
         # Cargar base de datos inicial
         self.refresh_database()
+    
+    def setup_window_properties(self):
+        """Configura las propiedades de la ventana: posición, tamaño y redimensionamiento"""
+        
+        # Obtener las dimensiones de la pantalla
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        screen_width = screen_geometry.width()
+        screen_height = screen_geometry.height()
+        
+        # Definir el tamaño de la ventana (80% del tamaño de la pantalla)
+        window_width = int(screen_width * 0.8)
+        window_height = int(screen_height * 0.8)
+        
+        # Calcular la posición para centrar la ventana
+        x_pos = (screen_width - window_width) // 2
+        y_pos = (screen_height - window_height) // 2
+        
+        # Establecer geometría: (x, y, width, height)
+        self.setGeometry(x_pos, y_pos, window_width, window_height)
+        
+        # Permitir redimensionamiento
+        self.setMinimumSize(800, 600) 
+        # self.setMaximumSize(1600, 1200) # Opcional
+        self.setWindowTitle("Spes Nova Finder")
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logo.png')
+        self.setWindowIcon(QIcon(icon_path))
+        self.setWindowTitle("Spes Nova Finder")
 
     # === Save-model dialog handler ===
     def on_request_model_save(self, suggested_path: str):
