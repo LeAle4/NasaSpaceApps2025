@@ -127,34 +127,38 @@ class CurrentSesion(QObject):
 
     def startTraining(self, confirmed_csv: str, rejected_csv: str, out_dir: str, params: dict):
         """Start background training job and emit training_finished_signal on completion."""
-        # Basic file checks
+        # Basic file checks (fail fast)
         if not os.path.exists(confirmed_csv):
             self.popup_msg_signal.emit('error', f'Confirmed file not found: {confirmed_csv}')
             return
         if not os.path.exists(rejected_csv):
             self.popup_msg_signal.emit('error', f'Rejected file not found: {rejected_csv}')
+            return
 
-        thread = CurrentSesion.TrainingThread(confirmed_csv, rejected_csv, out_dir or '', params or {})
-
-        def _on_done(result: dict):
-            # forward popup and emit finished signal for frontend to open graphs
-            status = result.get('status', 'error')
-            message = result.get('message', '')
+        # Run training step-by-step synchronously so data is created in-order
+        try:
+            result = ml_core.train_from_database(
+                confirmed_csv=confirmed_csv,
+                rejected_csv=rejected_csv,
+                data_headers=p.DATA_HEADERS,
+                out_dir=out_dir or '',
+                params=params or {},
+            )
+            status = result.get('status', 'success')
+            message = result.get('message', 'Training completed')
+            # notify UI
             self.popup_msg_signal.emit(status, message)
             try:
                 self.training_finished_signal.emit(result)
             except Exception:
                 pass
-            # cleanup thread reference if stored
+        except Exception as e:
+            msg = str(e)
+            self.popup_msg_signal.emit('error', msg)
             try:
-                del self._predict_threads['training']
+                self.training_finished_signal.emit({'status': 'error', 'message': msg, 'saved_paths': []})
             except Exception:
                 pass
-
-        thread.finished_signal.connect(_on_done)
-        # store under a reserved key so we can avoid multiple parallel trainings if desired
-        self._predict_threads['training'] = thread
-        thread.start()
     
     def newPredictionBatch(self, path):
         """Create and register a PredictionBatch from a CSV path.
