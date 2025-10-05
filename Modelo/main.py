@@ -290,9 +290,6 @@ def main():
     }
 
     train_save_model(X, y, model_out, rf_params)
-    # Ensure visualization output directory exists
-    briescore = visualization.compute_brier_score(y, np.asarray(y))  # Dummy example; replace with real scores if available
-    print(f"Brier score: {briescore}")
 
     progress.stage("kfold_evaluation", "Running k-fold evaluation and saving results")
     results = ten_fold_test_saved_model(model_out, X, y)
