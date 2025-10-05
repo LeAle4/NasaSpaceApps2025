@@ -18,6 +18,10 @@ class CurrentSesion(QObject):
     batch_data_signal = pyqtSignal(pd.DataFrame, int)  # Signal to send batch data to frontend
     database_data_signal = pyqtSignal(pd.DataFrame, str)  # Signal to send DB data to frontend
     training_finished_signal = pyqtSignal(dict)  # emit dict with training result
+    # Ask the frontend to show a Save File dialog. Payload: suggested_filename (str)
+    request_model_save_signal = pyqtSignal(str)
+    # Frontend replies with chosen path; payload: absolute_path (str)
+    model_save_path_signal = pyqtSignal(str)
 
     def __init__(self):
         """Initialize session state and load persisted database files.
@@ -33,6 +37,10 @@ class CurrentSesion(QObject):
         # track running prediction threads
         self._predict_threads = {}
         self.init_database()
+        # storage for the most recently trained model wrapper (not persisted)
+        self._last_trained_wrapper = None
+        # connect incoming save-path replies to handler
+        self.model_save_path_signal.connect(self._on_model_save_path)
 
     class BatchPredictThread(QThread):
         """Background thread wrapper to execute PredictionBatch.predictBatch.
@@ -144,10 +152,30 @@ class CurrentSesion(QObject):
                 out_dir=out_dir or '',
                 params=params or {},
             )
+            # If training returned a model wrapper, keep it for potential save
+            try:
+                wrapper = result.get('model_wrapper')
+                if wrapper is not None:
+                    self._last_trained_wrapper = wrapper
+            except Exception:
+                pass
             status = result.get('status', 'success')
             message = result.get('message', 'Training completed')
             # notify UI
             self.popup_msg_signal.emit(status, message)
+            # Ask frontend to prompt for model save if we have a wrapper
+            if self._last_trained_wrapper is not None:
+                # suggest a filename using out_dir if provided
+                suggested = 'model.joblib'
+                try:
+                    if out_dir and os.path.isdir(out_dir):
+                        suggested = os.path.join(out_dir, suggested)
+                except Exception:
+                    pass
+                try:
+                    self.request_model_save_signal.emit(suggested)
+                except Exception:
+                    pass
             try:
                 self.training_finished_signal.emit(result)
             except Exception:
@@ -159,6 +187,34 @@ class CurrentSesion(QObject):
                 self.training_finished_signal.emit({'status': 'error', 'message': msg, 'saved_paths': []})
             except Exception:
                 pass
+    def _on_model_save_path(self, absolute_path: str):
+        """Called when the frontend returns a save path for the last trained model.
+
+        If we have a trained wrapper stored, persist it using Model.save and
+        notify the frontend via popup_msg_signal. The method is defensive and
+        emits an error if no trained model is available.
+        """
+        if not absolute_path:
+            self.popup_msg_signal.emit('warning', 'No path provided for model save')
+            return
+
+        wrapper = getattr(self, '_last_trained_wrapper', None)
+        if wrapper is None:
+            self.popup_msg_signal.emit('error', 'No trained model available to save')
+            return
+
+        try:
+            # ensure parent dir exists
+            parent = os.path.dirname(absolute_path)
+            if parent and not os.path.exists(parent):
+                os.makedirs(parent, exist_ok=True)
+            # Model wrapper exposes save(path)
+            wrapper.save(absolute_path)
+            self.popup_msg_signal.emit('success', f'Model saved to: {absolute_path}')
+            # clear stored wrapper after saving to avoid accidental reuse
+            self._last_trained_wrapper = None
+        except Exception as e:
+            self.popup_msg_signal.emit('error', f'Failed to save model: {e}')
     
     def newPredictionBatch(self, path):
         """Create and register a PredictionBatch from a CSV path.
