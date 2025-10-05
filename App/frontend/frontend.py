@@ -833,7 +833,7 @@ class MainWindow(QMainWindow):
             #df_sample = pd.DataFrame([sample])
             orbit_ctx = orbit.create_child_widget(
                 df=self.visualization_dataframe,
-                row_index=0,
+                row_index=actual_row_index,
                 speed=5.0,
                 show_solar_system=True,
                 show_habitable_zone=True,
