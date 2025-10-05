@@ -154,11 +154,11 @@ def train_from_database(
     df_conf = pd.read_csv(confirmed_csv)
     df_rej = pd.read_csv(rejected_csv)
 
-    # Label and combine
+    # Label and combine: use 1 for confirmed, -1 for false positives (rejected)
     df_conf = df_conf.copy()
     df_rej = df_rej.copy()
     df_conf['__label__'] = 1
-    df_rej['__label__'] = 0
+    df_rej['__label__'] = -1
     df = pd.concat([df_conf, df_rej], ignore_index=True)
 
     # Verify features present
