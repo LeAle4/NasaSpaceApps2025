@@ -72,7 +72,7 @@ def run_pipeline(
 			y = y_df.iloc[:, 0].squeeze()
 
 	print(f"Starting training on {len(X)} samples and {X.shape[1]} features")
-	results = train_save_model(X, y, random_state=random_state)
+	results = train_save_model(X, y, params = {"n_estimators": RF_ESTIMATORS, "n_jobs": RF_N_JOBS}, random_state=random_state)
 
 	# Save the model
 	print(f"Saving trained model to: {out_model}")
@@ -111,5 +111,5 @@ def run_pipeline(
 
 if __name__ == '__main__':
 	# Lightweight smoke-run: don't compute expensive permutation by default
-	run_pipeline(compute_permutation=False)
+	run_pipeline(compute_permutation=True)
 

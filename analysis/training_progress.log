@@ -16,3 +16,128 @@
  [0.98 0.02]
  [0.95 0.05]]
 [2025-10-05 00:49:24]   - Creating train/test accuracy plot
+[2025-10-05 00:52:51] STAGE TRAINING: Starting model training
+[2025-10-05 00:52:51]   - RandomForest params: {}
+[2025-10-05 00:52:51]   - Splitting data into train and test sets
+[2025-10-05 00:52:51]   - Fitting RandomForest on training data
+[2025-10-05 00:52:56]   - Predicting on test set and computing metrics
+[2025-10-05 00:52:57]   - Training complete; returning results
+[2025-10-05 00:52:57] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 00:52:57]   - Computing cross-validation scores
+[2025-10-05 00:53:40]   - y_score preview: shape=(3379, 2), dtype=float64
+[2025-10-05 00:53:40]   - y_score sample=[[1.   0.  ]
+ [0.95 0.05]
+ [0.96 0.04]
+ [0.06 0.94]
+ [0.39 0.61]
+ [0.   1.  ]
+ [0.98 0.02]
+ [0.95 0.05]]
+[2025-10-05 00:53:42]   - Creating train/test accuracy plot
+[2025-10-05 00:57:44] STAGE TRAINING: Starting model training
+[2025-10-05 00:57:44]   - RandomForest params: {}
+[2025-10-05 00:57:44]   - Splitting data into train and test sets
+[2025-10-05 00:57:44]   - Fitting RandomForest on training data
+[2025-10-05 00:57:50]   - Predicting on test set and computing metrics
+[2025-10-05 00:57:50]   - Training complete; returning results
+[2025-10-05 00:57:50] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 00:57:51]   - Computing cross-validation scores
+[2025-10-05 00:58:35]   - y_score preview: shape=(3379, 2), dtype=float64
+[2025-10-05 00:58:35]   - y_score sample=[[1.   0.  ]
+ [0.95 0.05]
+ [0.96 0.04]
+ [0.06 0.94]
+ [0.39 0.61]
+ [0.   1.  ]
+ [0.98 0.02]
+ [0.95 0.05]]
+[2025-10-05 00:58:35]   - Creating train/test accuracy plot
+[2025-10-05 01:20:01] STAGE TRAINING: Starting model training
+[2025-10-05 01:20:01]   - RandomForest params: {}
+[2025-10-05 01:20:01]   - Splitting data into train and test sets
+[2025-10-05 01:20:01]   - Fitting RandomForest on training data
+[2025-10-05 01:20:07]   - Predicting on test set and computing metrics
+[2025-10-05 01:20:07]   - Training complete; returning results
+[2025-10-05 01:20:08] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 01:20:08]   - Computing cross-validation scores
+[2025-10-05 01:20:47]   - y_score preview: shape=(3379, 2), dtype=float64
+[2025-10-05 01:20:47]   - y_score sample=[[1.   0.  ]
+ [0.95 0.05]
+ [0.96 0.04]
+ [0.06 0.94]
+ [0.39 0.61]
+ [0.   1.  ]
+ [0.98 0.02]
+ [0.95 0.05]]
+[2025-10-05 01:20:48]   - Creating train/test accuracy plot
+[2025-10-05 01:29:26] STAGE TRAINING: Starting model training
+[2025-10-05 01:29:26]   - RandomForest params: {}
+[2025-10-05 01:29:26]   - Splitting data into train and test sets
+[2025-10-05 01:29:26]   - Fitting RandomForest on training data
+[2025-10-05 01:29:32]   - Predicting on test set and computing metrics
+[2025-10-05 01:29:32]   - Training complete; returning results
+[2025-10-05 01:29:33] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 01:29:33]   - Computing cross-validation scores
+[2025-10-05 01:29:38]   - Computing per-fold metrics (k-fold)
+[2025-10-05 01:31:12]   - y_score preview: shape=(3379, 2), dtype=float64
+[2025-10-05 01:31:12]   - y_score sample=[[1.   0.  ]
+ [0.95 0.05]
+ [0.96 0.04]
+ [0.06 0.94]
+ [0.39 0.61]
+ [0.   1.  ]
+ [0.98 0.02]
+ [0.95 0.05]]
+[2025-10-05 01:31:13]   - Creating train/test accuracy plot
+[2025-10-05 01:33:59] STAGE TRAINING: Starting model training
+[2025-10-05 01:33:59]   - RandomForest params: {}
+[2025-10-05 01:33:59]   - Splitting data into train and test sets
+[2025-10-05 01:33:59]   - Fitting RandomForest on training data
+[2025-10-05 01:34:05]   - Predicting on test set and computing metrics
+[2025-10-05 01:34:06]   - Training complete; returning results
+[2025-10-05 01:34:06] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 01:34:06]   - Computing cross-validation scores
+[2025-10-05 01:34:47]   - Computing per-fold metrics (k-fold)
+[2025-10-05 01:36:31]   - y_score preview: shape=(3379, 2), dtype=float64
+[2025-10-05 01:36:31]   - y_score sample=[[1.   0.  ]
+ [0.95 0.05]
+ [0.96 0.04]
+ [0.06 0.94]
+ [0.39 0.61]
+ [0.   1.  ]
+ [0.98 0.02]
+ [0.95 0.05]]
+[2025-10-05 01:36:31]   - Creating train/test accuracy plot
+[2025-10-05 01:42:15] STAGE TRAINING: Starting model training
+[2025-10-05 01:42:15]   - RandomForest params: {}
+[2025-10-05 01:42:15]   - Splitting data into train and test sets
+[2025-10-05 01:42:15]   - Fitting RandomForest on training data
+[2025-10-05 01:42:21]   - Predicting on test set and computing metrics
+[2025-10-05 01:42:21]   - Training complete; returning results
+[2025-10-05 01:42:55] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 01:42:55]   - Computing cross-validation scores
+[2025-10-05 01:43:22]   - Computing per-fold metrics (k-fold)
+[2025-10-05 01:44:53] STAGE TRAINING: Starting model training
+[2025-10-05 01:44:53]   - RandomForest params: {'n_estimators': 100, 'n_jobs': -1}
+[2025-10-05 01:44:53]   - Splitting data into train and test sets
+[2025-10-05 01:44:53]   - Fitting RandomForest on training data
+[2025-10-05 01:44:55]   - Predicting on test set and computing metrics
+[2025-10-05 01:44:55]   - Training complete; returning results
+[2025-10-05 01:45:33] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 01:45:33]   - Computing cross-validation scores
+[2025-10-05 01:46:01]   - Computing per-fold metrics (k-fold)
+[2025-10-05 01:46:34]   - y_score preview: shape=(3379, 2), dtype=float64
+[2025-10-05 01:46:34]   - y_score sample=[[1.   0.  ]
+ [0.95 0.05]
+ [0.96 0.04]
+ [0.06 0.94]
+ [0.39 0.61]
+ [0.   1.  ]
+ [0.98 0.02]
+ [0.95 0.05]]
+[2025-10-05 01:46:34]   - Creating train/test accuracy plot
+[2025-10-05 01:46:35]   - Computing permutation importances (quick)
+[2025-10-05 01:49:40] STAGE TRAINING: Starting model training
+[2025-10-05 01:49:40]   - RandomForest params: {'n_estimators': 100, 'n_jobs': -1}
+[2025-10-05 01:49:40]   - Splitting data into train and test sets
+[2025-10-05 01:49:40]   - Fitting RandomForest on training data

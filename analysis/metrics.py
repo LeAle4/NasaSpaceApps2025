@@ -1,63 +1,54 @@
-"""Model evaluation helpers: compute a broad set of metrics for classifiers.
+"""Condensed metrics helpers for classifier evaluation.
 
-This module provides a single high-level helper `evaluate_model` which
-computes a wide range of model diagnostics useful for reporting and
-debugging. The function is intentionally conservative: expensive analyses
-(permutation importance, learning curves) are optional and disabled by
-default.
+This module provides two small utilities:
+- evaluate_model: compute standard metrics and (optionally) permutation
+  importances and a learning curve.
+- ten_fold_cross_validation: run stratified k-fold CV and return per-fold
+  accuracy/precision/recall/f1 arrays.
 
-Returned structure
-------------------
-The function returns a dict with scalar metrics (floats) and optional keys
-for more complex objects:
-
-- "confusion_matrix": 2D array
-- "classification_report": dict
-- "balanced_accuracy", "cohen_kappa", "mcc", "accuracy": floats
-- "log_loss": float or None (requires predict_proba)
-- "brier_score": float or None
-- "top_{k}_accuracy": float or None (requires predict_proba)
-- "oob_score": float or None (if estimator exposes oob_score_)
-- "permutation_importance": dict with mean/std and the raw result object
-- "learning_curve": dict with train_sizes, train_scores, test_scores
-
-Usage example
--------------
-from Modelo.metrics import evaluate_model
-
-# estimator should be a fitted classifier (e.g., RandomForestClassifier)
-metrics = evaluate_model(estimator, X_train, X_test, y_train, y_test,
-                         compute_permutation=False, compute_learning_curve=False)
-
-print(metrics['accuracy'])
-print(metrics['classification_report'])
-
+The implementation below is intentionally compact and makes reasonable
+assumptions about inputs (fitted estimators, aligned arrays). It focuses on
+clarity rather than exhaustive defensive coding.
 """
-from typing import Optional, Dict, Any
+
+from typing import Dict, Any
 
 import numpy as np
-import pandas as pd
 from sklearn.metrics import (
-    log_loss,
+    accuracy_score,
+    confusion_matrix,
+    classification_report,
+    balanced_accuracy_score,
     cohen_kappa_score,
     matthews_corrcoef,
-    balanced_accuracy_score,
-    classification_report,
+    log_loss,
+    brier_score_loss,
+    precision_score,
+    recall_score,
+    f1_score,
     top_k_accuracy_score,
-    accuracy_score,
 )
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score
+
 from sklearn.inspection import permutation_importance
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import learning_curve, StratifiedKFold
 
-# Progress helper used across modules
-import progress
 
-# Brier score util: use existing visualization.compute_brier_score if available
-try:
-    from Modelo.visualization import compute_brier_score
-except Exception:
-    from sklearn.metrics import brier_score_loss
+def _compute_brier(y_true, y_proba):
+    """Brier score: binary uses sklearn's brier_score_loss; multiclass uses MSE vs one-hot."""
+    y_true = np.asarray(y_true)
+    y_proba = np.asarray(y_proba)
+    classes = np.unique(y_true)
+    if len(classes) == 2:
+        # If proba matrix given, take positive class column
+        if y_proba.ndim == 2:
+            pos_col = 1 if y_proba.shape[1] > 1 else 0
+            return float(brier_score_loss(y_true, y_proba[:, pos_col]))
+        return float(brier_score_loss(y_true, y_proba))
+    # multiclass: mean squared error against one-hot
+    from sklearn.preprocessing import label_binarize
+
+    y_true_bin = label_binarize(y_true, classes=classes)
+    return float(np.mean((y_true_bin - y_proba) ** 2))
 
 
 def evaluate_model(
@@ -68,194 +59,105 @@ def evaluate_model(
     y_test,
     *,
     top_k: int = 3,
-    compute_permutation: bool = True,
+    compute_permutation: bool = False,
     n_repeats: int = 10,
     random_state: int = 42,
     compute_learning_curve: bool = False,
     cv_for_learning: int = 5,
 ) -> Dict[str, Any]:
-    """Compute a suite of evaluation metrics for a fitted classifier.
+    """Compute common evaluation metrics for a fitted classifier.
 
-    Returns a dictionary with scalar metrics and optional objects under keys
+    Returns a dict with scalar metrics and optional objects under keys
     'permutation_importance' and 'learning_curve' when requested.
     """
     results: Dict[str, Any] = {}
 
-    # Predictions
+    # Basic predictions
     y_pred = estimator.predict(X_test)
-
-    # Try to get probabilities or decision function for continuous scores
-    y_proba = None
-    y_score = None
-    if hasattr(estimator, "predict_proba"):
-        try:
-            y_proba = estimator.predict_proba(X_test)
-            y_score = y_proba
-        except Exception:
-            y_proba = None
-    if y_proba is None and hasattr(estimator, "decision_function"):
-        try:
-            y_score = estimator.decision_function(X_test)
-        except Exception:
-            y_score = None
-
-    # Basic counts and accuracy
     results["accuracy"] = float(accuracy_score(y_test, y_pred))
     results["confusion_matrix"] = confusion_matrix(y_test, y_pred)
+    results["classification_report"] = classification_report(y_test, y_pred, output_dict=True)
 
-    # Classification report (string and parsed dict)
-    try:
-        rep = classification_report(y_test, y_pred, output_dict=True)
-        results["classification_report"] = rep
-    except Exception:
-        results["classification_report"] = classification_report(y_test, y_pred)
+    # Additional scalar metrics
+    results["balanced_accuracy"] = float(balanced_accuracy_score(y_test, y_pred))
+    results["cohen_kappa"] = float(cohen_kappa_score(y_test, y_pred))
+    results["mcc"] = float(matthews_corrcoef(y_test, y_pred))
 
-    # Balanced accuracy, Kappa, MCC
-    try:
-        results["balanced_accuracy"] = float(balanced_accuracy_score(y_test, y_pred))
-    except Exception:
-        results["balanced_accuracy"] = None
-    try:
-        results["cohen_kappa"] = float(cohen_kappa_score(y_test, y_pred))
-    except Exception:
-        results["cohen_kappa"] = None
-    try:
-        results["mcc"] = float(matthews_corrcoef(y_test, y_pred))
-    except Exception:
-        results["mcc"] = None
-
-    # Log loss (requires probabilities)
+    # Probabilistic metrics if available
+    y_proba = estimator.predict_proba(X_test) if hasattr(estimator, "predict_proba") else None
     if y_proba is not None:
         try:
             results["log_loss"] = float(log_loss(y_test, y_proba))
         except Exception:
             results["log_loss"] = None
-    else:
-        results["log_loss"] = None
-
-    # Brier score
-    try:
-        if y_proba is not None:
-            # Use provided prob matrix when possible
-            results["brier_score"] = float(compute_brier_score(y_test, y_proba))
-        else:
-            # Fallback: try compute_brier_score with discrete predictions
-            results["brier_score"] = float(compute_brier_score(y_test, y_pred))
-    except Exception:
-        results["brier_score"] = None
-
-    # Top-k accuracy (requires probabilities)
-    if y_proba is not None:
+        results["brier_score"] = _compute_brier(y_test, y_proba)
+        # top-k accuracy for multiclass
         try:
             results[f"top_{top_k}_accuracy"] = float(top_k_accuracy_score(y_test, y_proba, k=top_k))
         except Exception:
             results[f"top_{top_k}_accuracy"] = None
     else:
-        results[f"top_{top_k}_accuracy"] = None
+        results.update({"log_loss": None, "brier_score": None, f"top_{top_k}_accuracy": None})
 
-    # OOB score if available (RandomForest)
-    try:
-        oob = getattr(estimator, "oob_score_", None)
-        results["oob_score"] = float(oob) if oob is not None else None
-    except Exception:
-        results["oob_score"] = None
-
-    # Permutation importance (optional)
+    # Optional permutation importance (may be slow)
     if compute_permutation:
-        try:
-            pi = permutation_importance(estimator, X_test, y_test, n_repeats=n_repeats, random_state=random_state, n_jobs=-1)
-            # Provide a small summary and the full object. Access attributes defensively
-            importances_mean = getattr(pi, 'importances_mean', None)
-            importances_std = getattr(pi, 'importances_std', None)
-            results["permutation_importance"] = {
-                "importances_mean": importances_mean,
-                "importances_std": importances_std,
-                "result_obj": pi,
-            }
-        except Exception:
-            results["permutation_importance"] = None
+        pi = permutation_importance(estimator, X_test, y_test, n_repeats=n_repeats, random_state=random_state, n_jobs=-1)
+        results["permutation_importance"] = {
+            "importances_mean": getattr(pi, 'importances_mean', None),
+            "importances_std": getattr(pi, 'importances_std', None),
+            "result_obj": pi,
+        }
 
-    # Learning curve (optional) - compute train/test scores vs training set sizes
+    # Optional learning curve
     if compute_learning_curve:
-        try:
-            from sklearn.model_selection import learning_curve
+        lc = learning_curve(
+            estimator,
+            np.vstack([X_train, X_test]),
+            np.concatenate([y_train, y_test]),
+            cv=cv_for_learning,
+            n_jobs=-1,
+            train_sizes=np.linspace(0.1, 1.0, 5),
+        )
+        # learning_curve returns (train_sizes, train_scores, test_scores)
+        results["learning_curve"] = {"train_sizes": lc[0], "train_scores": lc[1], "test_scores": lc[2]}
 
-            lc = learning_curve(
-                estimator,
-                np.vstack([X_train, X_test]) if hasattr(X_train, "shape") else np.concatenate([X_train, X_test]),
-                np.concatenate([y_train, y_test]),
-                cv=cv_for_learning,
-                n_jobs=-1,
-                train_sizes=np.linspace(0.1, 1.0, 5),
-            )
-            # learning_curve returns (train_sizes, train_scores, test_scores)
-            train_sizes, train_scores, test_scores = lc[0], lc[1], lc[2]
-            results["learning_curve"] = {
-                "train_sizes": train_sizes,
-                "train_scores": train_scores,
-                "test_scores": test_scores,
-            }
-        except Exception:
-            results["learning_curve"] = None
+    # OOB score if present (RandomForest)
+    oob_val = getattr(estimator, "oob_score_", None)
+    results["oob_score"] = float(oob_val) if oob_val is not None else None
 
     return results
 
+
 def ten_fold_cross_validation(estimator, X, y, n_splits: int = 10, random_state: int = 42):
-    """Run a stratified n-fold cross-validation and return per-fold metrics.
+    """Stratified k-fold cross-validation returning per-fold metrics.
 
-    Args:
-        estimator: an sklearn estimator (unfitted)
-        X: features (DataFrame or array)
-        y: labels (Series or array)
-        random_state: seed for the StratifiedKFold splitter
-
-    Returns:
-        results: dict with keys 'accuracy', 'precision', 'recall', 'f1'
-                 each maps to a numpy array of length 10 (per-fold scores)
+    Returns a dict with numpy arrays for 'accuracy','precision','recall','f1'.
     """
     X_arr = np.asarray(X)
     y_arr = np.asarray(y)
 
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
-    accs = []
-    precisions = []
-    recalls = []
-    f1s = []
-
-    progress.stage("cross_validation", "Running stratified 10-fold cross-validation")
-    fold = 0
-
+    accs, precisions, recalls, f1s = [], [], [], []
     for train_idx, test_idx in skf.split(X_arr, y_arr):
         X_train, X_test = X_arr[train_idx], X_arr[test_idx]
         y_train, y_test = y_arr[train_idx], y_arr[test_idx]
-
-        fold += 1
-        progress.step(f"Starting fold {fold}/{n_splits}")
-
-        est = estimator
-        # If estimator is a class instance that was already fitted, clone is safer,
-        # but to avoid adding sklearn.base dependency we create a fresh instance when possible.
+        # fit a fresh clone of the estimator when possible
         try:
             from sklearn.base import clone
             est = clone(estimator)
         except Exception:
-            # fallback: use the provided estimator and refit (may overwrite state)
             est = estimator
-
         est.fit(X_train, y_train)
         y_pred = est.predict(X_test)
-
         accs.append(accuracy_score(y_test, y_pred))
-        # average='macro' to treat classes equally regardless of support
         precisions.append(precision_score(y_test, y_pred, average='macro', zero_division=0))
         recalls.append(recall_score(y_test, y_pred, average='macro', zero_division=0))
         f1s.append(f1_score(y_test, y_pred, average='macro', zero_division=0))
 
-    results = {
+    return {
         'accuracy': np.array(accs),
         'precision': np.array(precisions),
         'recall': np.array(recalls),
         'f1': np.array(f1s),
     }
-    return results
