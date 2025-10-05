@@ -17,6 +17,7 @@ class CurrentSesion(QObject):
     prediction_progress_signal = pyqtSignal(int, str, str)  # batch_id, status, message
     batch_data_signal = pyqtSignal(pd.DataFrame, int)  # Signal to send batch data to frontend
     database_data_signal = pyqtSignal(pd.DataFrame, str)  # Signal to send DB data to frontend
+    training_finished_signal = pyqtSignal(dict)  # emit dict with training result
 
     def __init__(self):
         """Initialize session state and load persisted database files.
@@ -61,6 +62,32 @@ class CurrentSesion(QObject):
                 # Convert unexpected exceptions into an error status for the UI
                 self.finished_signal.emit("error", str(e), self.batch.id)
 
+    class TrainingThread(QThread):
+        """Run a training job in background using ml_core.train_from_database."""
+        finished_signal = pyqtSignal(dict)
+
+        def __init__(self, confirmed_csv: str, rejected_csv: str, out_dir: str, params: dict):
+            super().__init__()
+            self.confirmed_csv = confirmed_csv
+            self.rejected_csv = rejected_csv
+            self.out_dir = out_dir
+            self.params = params or {}
+
+        def run(self):
+            try:
+                # delegate to ml_core
+                res = ml_core.train_from_database(
+                    confirmed_csv=self.confirmed_csv,
+                    rejected_csv=self.rejected_csv,
+                    data_headers=p.DATA_HEADERS,
+                    out_dir=self.out_dir,
+                    params=self.params,
+                )
+                # Expect res to be a dict with at least status/message
+                self.finished_signal.emit(res)
+            except Exception as e:
+                self.finished_signal.emit({'status': 'error', 'message': str(e), 'saved_paths': []})
+
     def startPrediction(self, batch_id: int):
         """Start prediction for a specific batch id in a background thread."""
         if batch_id not in self.currentBatches:
@@ -97,6 +124,41 @@ class CurrentSesion(QObject):
         thread.finished_signal.connect(_on_done)
         self._predict_threads[batch_id] = thread
         thread.start()
+
+    def startTraining(self, confirmed_csv: str, rejected_csv: str, out_dir: str, params: dict):
+        """Start background training job and emit training_finished_signal on completion."""
+        # Basic file checks (fail fast)
+        if not os.path.exists(confirmed_csv):
+            self.popup_msg_signal.emit('error', f'Confirmed file not found: {confirmed_csv}')
+            return
+        if not os.path.exists(rejected_csv):
+            self.popup_msg_signal.emit('error', f'Rejected file not found: {rejected_csv}')
+            return
+
+        # Run training step-by-step synchronously so data is created in-order
+        try:
+            result = ml_core.train_from_database(
+                confirmed_csv=confirmed_csv,
+                rejected_csv=rejected_csv,
+                data_headers=p.DATA_HEADERS,
+                out_dir=out_dir or '',
+                params=params or {},
+            )
+            status = result.get('status', 'success')
+            message = result.get('message', 'Training completed')
+            # notify UI
+            self.popup_msg_signal.emit(status, message)
+            try:
+                self.training_finished_signal.emit(result)
+            except Exception:
+                pass
+        except Exception as e:
+            msg = str(e)
+            self.popup_msg_signal.emit('error', msg)
+            try:
+                self.training_finished_signal.emit({'status': 'error', 'message': msg, 'saved_paths': []})
+            except Exception:
+                pass
     
     def newPredictionBatch(self, path):
         """Create and register a PredictionBatch from a CSV path.
