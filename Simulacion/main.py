@@ -218,25 +218,36 @@ def orbital_position_vector(a_m, e, i_deg, omega_deg, Omega_deg, M0, t, P):
     R = rotation_matrix_z(np.deg2rad(Omega_deg)) @ rotation_matrix_x(np.deg2rad(i_deg)) @ rotation_matrix_z(np.deg2rad(omega_deg))
     return R @ vec
 
-def add_starfield(view, num_stars=2000, radius=15.0):
-    """Generate a starfield as random points surrounding the scene"""
+def add_starfield(view, num_stars=8000, radius=10000.0):
+    """Generate a starfield as random points on a very large sphere surrounding the scene"""
     phi = np.random.uniform(0, 2*np.pi, num_stars)
     costheta = np.random.uniform(-1, 1, num_stars)
-    u = np.random.uniform(0, 1, num_stars)
 
     theta = np.arccos(costheta)
-    r = radius * (u ** (1/3))  # uniform in volume
+    # All stars are on the sphere surface (constant radius)
+    r = radius
 
     x = r * np.sin(theta) * np.cos(phi)
     y = r * np.sin(theta) * np.sin(phi)
     z = r * np.cos(theta)
 
     positions = np.vstack([x, y, z]).T
+    
+    # Create more varied star colors and brightness
     colors = np.ones((num_stars, 4))
-    colors[:,3] = np.random.uniform(0.7, 1.0, num_stars)  # varying brightness
+    # Add some color variation (white to slightly bluish/yellowish stars)
+    color_variation = np.random.uniform(0.8, 1.0, (num_stars, 3))
+    colors[:,:3] = color_variation
+    colors[:,3] = np.random.uniform(0.3, 1.0, num_stars)  # varying brightness
 
     stars = visuals.Markers(parent=view.scene)
-    stars.set_data(pos=positions, face_color=colors, size=1.5)
+    stars.set_data(pos=positions, face_color=colors, size=2.5)
+    
+    # Prevent stars from being culled when zooming in
+    # Set render properties to always show stars
+    stars.order = -1000  # Render stars first (background)
+    stars.set_gl_state(depth_test=False)  # Don't depth test stars
+    
     return stars
 
 def create_solar_system_planets(parent_scene, scale):
@@ -283,18 +294,20 @@ def create_solar_system_planets(parent_scene, scale):
                                       width=1,
                                       parent=parent_scene)
         
-        # Create text label for planet name
+        # Create text label for planet name - positioned upper right of planet
+        label_offset = np.array([planet_vis_radius * 3, planet_vis_radius * 2, planet_vis_radius])  # Upper right offset
         label = scene.visuals.Text(text=name,
-                                 pos=(scaled_pos[0], scaled_pos[1] + planet_vis_radius * 2, scaled_pos[2]),
+                                 pos=scaled_pos + label_offset,
                                  color='white',
-                                 font_size=12,
+                                 font_size=16,  # Bigger text
                                  parent=parent_scene)
         
         planet_objects[name] = {
             'visual': planet,
             'data': data,
             'initial_M': M0,
-            'label': label
+            'label': label,
+            'orbit_line': orbit_line  # Store orbit line for visibility control
         }
         
     return planet_objects
@@ -326,13 +339,197 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
     path = np.array([orbital_position_vector(a_m,e,i_deg,omega_deg,Omega_deg,M0,t,P_sec) for t in ts])
     path_units = path*scale
 
-    # VisPy canvas
+    # VisPy canvas with PyQt5 backend
     canvas = scene.SceneCanvas(keys='interactive', show=True, bgcolor='black', size=(1000,700))
     view = canvas.central_widget.add_view()
     view.camera = scene.TurntableCamera(fov=45, distance=3.0)
+    
+    # Create PyQt5 UI overlay widgets
+    from PyQt5.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QCheckBox, QWidget, QFrame
+    from PyQt5.QtCore import Qt
+    from PyQt5.QtGui import QFont
+    
+    # Get the native widget to add PyQt5 overlays
+    native_widget = canvas.native
+    
+    # Data values for display
+    kepid = row.get('kepid', '')
+    if kepid and kepid != 'Unknown':
+        exoplanet_name = f"Exoplanet {kepid}"
+    else:
+        exoplanet_name = "Exoplanet"
+    
+    star_mass_value = float(row.get('koi_smass',1.0) or 1.0)
+    star_radius_value = float(row.get('koi_srad',1.0) or 1.0)
+    planet_radius_value = float(row.get('koi_prad',1.0) or 1.0)
+    
+    # Create data table widget (upper left)
+    data_frame = QFrame(native_widget)
+    data_frame.setStyleSheet("""
+        QFrame {
+            background-color: rgba(0, 0, 0, 150);
+            border: 2px solid cyan;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        QLabel {
+            color: white;
+            font-size: 12px;
+            margin: 3px 0px;
+            border: none;
+        }
+    """)
+    data_layout = QVBoxLayout(data_frame)
+    data_layout.setSpacing(3)  # Tighter vertical spacing
+    
+    # Data table title
+    title_label = QLabel("System Data")
+    title_label.setStyleSheet("color: cyan; font-size: 14px; font-weight: bold; margin-bottom: 5px;")
+    data_layout.addWidget(title_label)
+    
+    # Data rows
+    period_label = QLabel(f"Period: {P_days:.1f} days")
+    star_mass_label = QLabel(f"Star Mass: {star_mass_value:.2f} M☉")
+    star_radius_label = QLabel(f"Star Radius: {star_radius_value:.2f} R☉")
+    planet_radius_label = QLabel(f"Planet Radius: {planet_radius_value:.2f} R⊕")
+    temp_label = QLabel(f"Temperature: {teff:.0f} K")
+    
+    data_layout.addWidget(period_label)
+    data_layout.addWidget(star_mass_label)
+    data_layout.addWidget(star_radius_label)
+    data_layout.addWidget(planet_radius_label)
+    data_layout.addWidget(temp_label)
+    # Let it size to content (we'll position later)
+    data_frame.adjustSize()
+    data_frame.show()
+    
+    # Create controls widget (upper right)
+    controls_frame = QFrame(native_widget)
+    controls_frame.setStyleSheet("""
+        QFrame {
+            background-color: rgba(0, 0, 0, 150);
+            border: 2px solid cyan;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        QLabel {
+            color: white;
+            font-size: 12px;
+            margin: 3px 0px;
+            border: none;
+        }
+        QCheckBox {
+            color: white;
+            font-size: 12px;
+            margin: 5px 0px;
+            border: none;
+        }
+        QCheckBox::indicator {
+            width: 15px;
+            height: 15px;
+        }
+        QCheckBox::indicator:unchecked {
+            background-color: white;
+            border: 1px solid gray;
+        }
+        QCheckBox::indicator:checked {
+            background-color: green;
+            border: 1px solid gray;
+        }
+    """)
+    controls_layout = QVBoxLayout(controls_frame)
+    controls_layout.setSpacing(3)  # Tighter spacing
+    
+    # Controls title
+    controls_title = QLabel("Controls")
+    controls_title.setStyleSheet("color: cyan; font-size: 14px; font-weight: bold; margin-bottom: 5px;")
+    controls_layout.addWidget(controls_title)
+    
+    # Solar system checkbox
+    solar_system_checkbox = QCheckBox("Show Solar System")
+    solar_system_checkbox.setChecked(show_solar_system)
+    
+    def on_solar_system_toggle(checked):
+        nonlocal show_solar_system, solar_system_planets
+        show_solar_system = checked
+        
+        if show_solar_system and not solar_system_planets:
+            # Create solar system planets
+            print("Adding solar system planets...")
+            solar_system_planets = create_solar_system_planets(view.scene, scale)
+        elif not show_solar_system and solar_system_planets:
+            # Hide solar system planets and orbit lines
+            print("Hiding solar system planets...")
+            for planet_data in solar_system_planets.values():
+                planet_data['visual'].visible = False
+                planet_data['label'].visible = False
+                planet_data['orbit_line'].visible = False
+        elif show_solar_system and solar_system_planets:
+            # Show existing solar system planets and orbit lines
+            print("Showing solar system planets...")
+            for planet_data in solar_system_planets.values():
+                planet_data['visual'].visible = True
+                planet_data['label'].visible = True
+                planet_data['orbit_line'].visible = True
+    
+    solar_system_checkbox.stateChanged.connect(on_solar_system_toggle)
+    controls_layout.addWidget(solar_system_checkbox)
+    # Size to content (position later)
+    controls_frame.adjustSize()
+    controls_frame.show()
 
-    # Add starfield
-    add_starfield(view, num_stars=2000, radius=5.0)
+    # ================= Responsive Corner Positioning (improved) =================
+    from PyQt5.QtCore import QTimer
+    CORNER_MARGIN = 6  # tighter margin per request
+
+    def reposition_ui():
+        # Only adjust size if content width changed to avoid flicker
+        prev_w_data = data_frame.width()
+        prev_w_ctrl = controls_frame.width()
+        data_frame.adjustSize()
+        controls_frame.adjustSize()
+
+        w = native_widget.width() or canvas.size[0]
+        # Fallback if width is zero during resize init
+        if w <= 0:
+            return
+
+        # Anchor top-left
+        data_frame.move(CORNER_MARGIN, CORNER_MARGIN)
+
+        # Anchor top-right
+        right_x = w - controls_frame.width() - CORNER_MARGIN
+        if right_x < CORNER_MARGIN:
+            right_x = CORNER_MARGIN
+        controls_frame.move(right_x, CORNER_MARGIN)
+
+        # Overlap resolution (narrow window)
+        if (controls_frame.x() < data_frame.x() + data_frame.width() + 4 and
+            controls_frame.y() < data_frame.y() + data_frame.height()):
+            controls_frame.move(CORNER_MARGIN, data_frame.y() + data_frame.height() + 4)
+
+    # Connect also to VisPy canvas resize (emitted by backend)
+    try:
+        canvas.events.resize.disconnect(reposition_ui)  # ensure no duplicates
+    except Exception:
+        pass
+    canvas.events.resize.connect(lambda ev: reposition_ui())
+
+    # Wrap native Qt resizeEvent only once
+    if not hasattr(native_widget, '_orig_resize_evt2'):  # sentinel
+        native_widget._orig_resize_evt2 = native_widget.resizeEvent
+        def _wrapped_resize(ev):
+            native_widget._orig_resize_evt2(ev)
+            reposition_ui()
+        native_widget.resizeEvent = _wrapped_resize
+
+    # Initial deferred positioning
+    QTimer.singleShot(0, reposition_ui)
+    # ============================================================================
+
+    # Add starfield on a very large sphere background
+    starfield_radius = 10000.0
+    add_starfield(view, num_stars=8000, radius=starfield_radius)
 
     # Orbit line
     scene.visuals.Line(pos=path_units[:,:3], color=(0.7,0.7,1.0,0.8), width=2, parent=view.scene)
@@ -362,17 +559,55 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
                                      subdivisions=2,
                                      color=(0.5, 0.7, 1.0, 0.2))  # Atmospheric blue glow
     planet_atmosphere.transform = scene.transforms.MatrixTransform()
+    
+    # Create exoplanet label - positioned upper right of exoplanet
+    exoplanet_label_offset = np.array([planet_vis_radius * 3, planet_vis_radius * 2, planet_vis_radius])
+    exoplanet_label = scene.visuals.Text(text=exoplanet_name,
+                                       pos=exoplanet_label_offset,  # Will be updated in animation
+                                       color='yellow',
+                                       font_size=18,  # Even bigger for exoplanet
+                                       parent=view.scene)
+    exoplanet_label.transform = scene.transforms.MatrixTransform()
 
-    # Create solar system planets if requested
+    # Initialize solar system planets (create if initially enabled)
     solar_system_planets = {}
     if show_solar_system:
         print("Adding solar system planets...")
         # Use the SAME scale as the exoplanet system for spatial consistency
         solar_system_planets = create_solar_system_planets(view.scene, scale)
 
-    # Camera distance
+    # Camera distance with maximum zoom-out limit to keep stars as backdrop
     maxr = np.max(np.linalg.norm(path_units,axis=1))
-    view.camera.distance = max(1.0, maxr*3.0)
+    initial_distance = max(1.0, maxr*3.0)
+    view.camera.distance = initial_distance
+    
+    # Set up zoom limits manually via event handling
+    max_zoom_distance = starfield_radius * 0.7  # Can't zoom further than 70% of star sphere
+    min_zoom_distance = 0.05
+    
+    # Store original camera wheel event
+    original_viewbox_mouse_event = view.camera.viewbox_mouse_event
+    
+    def limited_zoom_camera_event(event):
+        """Custom mouse event handler to limit zoom range"""
+        if event.type == 'mouse_wheel':
+            # Get current distance before processing
+            current_distance = view.camera.distance
+            
+            # Let the original handler process the event
+            original_viewbox_mouse_event(event)
+            
+            # Clamp the distance after the zoom
+            if view.camera.distance > max_zoom_distance:
+                view.camera.distance = max_zoom_distance
+            elif view.camera.distance < min_zoom_distance:
+                view.camera.distance = min_zoom_distance
+        else:
+            # For all other events, use original handler
+            original_viewbox_mouse_event(event)
+    
+    # Replace the camera's mouse event handler
+    view.camera.viewbox_mouse_event = limited_zoom_camera_event
 
     # Animation with unified time scale
     time_sim = 0.0
@@ -393,9 +628,17 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
         planet_atmosphere.transform.reset()
         planet_atmosphere.transform.translate(scaled_pos)
         
-        # Update solar system planets if showing - using SAME time scale
-        if show_solar_system:
+        # Update exoplanet label position (upper right of exoplanet)
+        exoplanet_label_pos = np.array(scaled_pos) + np.array([planet_vis_radius * 3, planet_vis_radius * 2, planet_vis_radius])
+        exoplanet_label.transform.reset()
+        exoplanet_label.transform.translate(exoplanet_label_pos)
+        
+        # Update solar system planets if showing and visible - using SAME time scale
+        if show_solar_system and solar_system_planets:
             for planet_name, planet_data in solar_system_planets.items():
+                if not planet_data['visual'].visible:
+                    continue  # Skip if planet is hidden
+                    
                 planet_obj = planet_data['visual']
                 label_obj = planet_data['label']
                 data = planet_data['data']
@@ -419,8 +662,9 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
                 planet_obj.transform.reset()
                 planet_obj.transform.translate(solar_pos)
                 
-                # Update label position (slightly offset from planet)
-                label_offset = solar_pos + np.array([0, 0, 0.05])  # Smaller offset
+                # Update label position (upper right offset from planet)
+                solar_planet_radius = data['radius'] * scale * 50  # Same scaling as creation
+                label_offset = solar_pos + np.array([solar_planet_radius * 3, solar_planet_radius * 2, solar_planet_radius])
                 label_obj.pos = label_offset
         
         canvas.update()
@@ -440,15 +684,15 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
     print("Controls: Mouse drag to rotate, scroll to zoom")
     app.run()
 
+def create_instance(df, row_index=0, speed=1.0, show_solar_system=False):
+    render_koi_orbit(df, row_index=row_index, speed=speed, show_solar_system=show_solar_system)
+
 # Example usage
 if __name__=='__main__':
     sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
-              'koi_smass':0.919,'koi_srad':0.927,'koi_prad':2.83,'koi_sma':0.2734,
-              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
+              'koi_smass':0.919,'koi_srad':0.927,'koi_prad':1.00,'koi_sma':0.2734,
+              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':10778.0}
     df_sample = pd.DataFrame([sample])
     
-    # Example 1: Show only the KOI system
-    # render_koi_orbit(df_sample, row_index=0, speed=5.0)
-    
-    # Example 2: Show KOI system with solar system planets for comparison
+
     render_koi_orbit(df_sample, row_index=0, speed=5.0, show_solar_system=True)
