@@ -282,3 +282,56 @@
 [2025-10-05 02:28:27]   - Creating true-positives vs others plot
 [2025-10-05 02:28:28]   - Creating train/test accuracy plot
 [2025-10-05 02:28:28]   - Computing permutation importances (quick)
+[2025-10-05 02:42:28] STAGE TRAINING: Starting model training
+[2025-10-05 02:42:28]   - RandomForest initialization
+[2025-10-05 02:42:28]       > params: {'n_estimators': 100, 'n_jobs': -1}
+[2025-10-05 02:42:28]   - Splitting data into train and test sets
+[2025-10-05 02:42:28]   - Train/test split complete
+[2025-10-05 02:42:28]       > X_train_shape: (5067, 37)
+[2025-10-05 02:42:28]       > X_test_shape: (3379, 37)
+[2025-10-05 02:42:28]       > y_train_distribution: {-1: 2534, 1: 2533}
+[2025-10-05 02:42:28]   - Fitting RandomForest on training data
+[2025-10-05 02:42:30]   - Model fitted
+[2025-10-05 02:42:30]       > oob_score: None
+[2025-10-05 02:42:30]       > n_estimators: 100
+[2025-10-05 02:42:30]   - Predicting on test set and computing metrics
+[2025-10-05 02:42:30]   - Prepared score object for ROC/PR plotting
+[2025-10-05 02:42:30]       > score_shape: (3379, 2)
+[2025-10-05 02:42:30]       > score_dtype: float64
+[2025-10-05 02:42:30]   - Training complete; returning results
+[2025-10-05 02:43:11] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 02:43:11]   - Preparing combined data for visualizations
+[2025-10-05 02:43:11]       > X_shape: (8446, 37)
+[2025-10-05 02:43:11]       > y_shape: (8446,)
+[2025-10-05 02:43:12]   - Computing cross-validation scores
+[2025-10-05 02:43:40]   - Computing per-fold metrics (k-fold)
+[2025-10-05 02:44:06] STAGE TRAINING: Starting model training
+[2025-10-05 02:44:06]   - RandomForest initialization
+[2025-10-05 02:44:06]       > params: {'n_estimators': 100, 'n_jobs': -1}
+[2025-10-05 02:44:06]   - Splitting data into train and test sets
+[2025-10-05 02:44:06]   - Train/test split complete
+[2025-10-05 02:44:06]       > X_train_shape: (5067, 37)
+[2025-10-05 02:44:06]       > X_test_shape: (3379, 37)
+[2025-10-05 02:44:06]       > y_train_distribution: {-1: 2534, 1: 2533}
+[2025-10-05 02:44:06]   - Fitting RandomForest on training data
+[2025-10-05 02:44:08]   - Model fitted
+[2025-10-05 02:44:08]       > oob_score: None
+[2025-10-05 02:44:08]       > n_estimators: 100
+[2025-10-05 02:44:08]   - Predicting on test set and computing metrics
+[2025-10-05 02:44:08]   - Prepared score object for ROC/PR plotting
+[2025-10-05 02:44:08]       > score_shape: (3379, 2)
+[2025-10-05 02:44:08]       > score_dtype: float64
+[2025-10-05 02:44:08]   - Training complete; returning results
+[2025-10-05 02:44:46] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 02:44:46]   - Preparing combined data for visualizations
+[2025-10-05 02:44:46]       > X_shape: (8446, 37)
+[2025-10-05 02:44:46]       > y_shape: (8446,)
+[2025-10-05 02:44:46]   - Computing cross-validation scores
+[2025-10-05 02:45:13]   - Computing per-fold metrics (k-fold)
+[2025-10-05 02:45:44]   - K-fold metrics computed
+[2025-10-05 02:45:44]       > kfold_summary: {'accuracy': 0.9969218149695729, 'precision': 0.9969391937176871, 'recall': 0.9969222323059169, 'f1': 0.9969217779606471}
+[2025-10-05 02:45:44]   - Creating ROC AUC plot
+[2025-10-05 02:45:44]   - Creating Precision-Recall plot
+[2025-10-05 02:45:44]   - Creating true-positives vs others plot
+[2025-10-05 02:45:45]   - Creating train/test accuracy plot
+[2025-10-05 02:45:45]   - Computing permutation importances (quick)
