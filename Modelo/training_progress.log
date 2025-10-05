@@ -39,3 +39,148 @@
 [2025-10-04 20:08:13]   - Predicting on test set and computing metrics
 [2025-10-04 20:08:13] STAGE VISUALIZATION: Creating and saving visualizations
 [2025-10-04 20:08:14]   - Computing cross-validation scores
+[2025-10-04 20:14:41] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 20:14:41]   - Reading features CSV
+[2025-10-04 20:14:41]   - Reading labels CSV
+[2025-10-04 20:14:41] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 20:14:41] STAGE TRAINING: Starting model training
+[2025-10-04 20:14:41]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 20:14:41]   - Splitting data into train and test sets
+[2025-10-04 20:14:41]   - Fitting RandomForest on training data
+[2025-10-04 20:14:44]   - Predicting on test set and computing metrics
+[2025-10-04 20:14:45] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 20:14:45]   - Computing cross-validation scores
+[2025-10-04 20:20:24] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 20:20:24]   - Reading features CSV
+[2025-10-04 20:20:24]   - Reading labels CSV
+[2025-10-04 20:20:24] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 20:20:24] STAGE TRAINING: Starting model training
+[2025-10-04 20:20:24]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 20:20:24]   - Splitting data into train and test sets
+[2025-10-04 20:20:24]   - Fitting RandomForest on training data
+[2025-10-04 20:20:28]   - Predicting on test set and computing metrics
+[2025-10-04 20:20:28] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 20:20:29]   - Computing cross-validation scores
+[2025-10-04 20:28:40] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 20:28:40]   - Reading features CSV
+[2025-10-04 20:28:40]   - Reading labels CSV
+[2025-10-04 20:28:40] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 20:28:40] STAGE TRAINING: Starting model training
+[2025-10-04 20:28:40]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 20:28:40]   - Splitting data into train and test sets
+[2025-10-04 20:28:40]   - Fitting RandomForest on training data
+[2025-10-04 20:28:44]   - Predicting on test set and computing metrics
+[2025-10-04 20:28:44] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 20:28:45]   - Computing cross-validation scores
+[2025-10-04 20:50:55] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 20:50:55]   - Reading features CSV
+[2025-10-04 20:50:55]   - Reading labels CSV
+[2025-10-04 20:50:55] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 20:50:55] STAGE TRAINING: Starting model training
+[2025-10-04 20:50:56]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 20:50:56]   - Splitting data into train and test sets
+[2025-10-04 20:50:56]   - Fitting RandomForest on training data
+[2025-10-04 20:50:59]   - Predicting on test set and computing metrics
+[2025-10-04 20:50:59] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 20:50:59]   - Computing cross-validation scores
+[2025-10-04 20:53:17] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 20:53:17]   - Reading features CSV
+[2025-10-04 20:53:17]   - Reading labels CSV
+[2025-10-04 20:53:17] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 20:53:17] STAGE TRAINING: Starting model training
+[2025-10-04 20:53:17]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 20:53:17]   - Splitting data into train and test sets
+[2025-10-04 20:53:17]   - Fitting RandomForest on training data
+[2025-10-04 20:53:20]   - Predicting on test set and computing metrics
+[2025-10-04 20:53:20] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 20:53:21]   - Computing cross-validation scores
+[2025-10-04 20:54:31]   - Preparing scores for ROC/PR plotting
+[2025-10-04 20:54:31]   - X_test shape=(5068, 37), y_test shape=(5068,)
+[2025-10-04 20:54:31]   - y_score preview: shape=(5068, 3), dtype=float64
+[2025-10-04 20:54:31]   - y_score sample=[[0.   0.53 0.47]
+ [0.95 0.04 0.01]
+ [0.02 0.61 0.37]
+ [0.   0.11 0.89]
+ [0.99 0.   0.01]
+ [0.97 0.01 0.02]
+ [0.96 0.04 0.  ]
+ [0.99 0.   0.01]]
+[2025-10-04 20:54:33]   - Saving train/test accuracy plot
+[2025-10-04 20:54:33] STAGE PERSISTENCE: Saving trained model to disk
+[2025-10-04 20:54:34]   - Saved model to model.joblib
+[2025-10-04 20:54:34] STAGE KFOLD_EVALUATION: Running k-fold evaluation and saving results
+[2025-10-04 20:54:34] STAGE LOAD_MODEL: Loading model from model.joblib
+[2025-10-04 20:54:34]   - Model loaded; starting 10-fold evaluation
+[2025-10-04 20:54:34] STAGE CROSS_VALIDATION: Running stratified 10-fold cross-validation
+[2025-10-04 20:54:34]   - Starting fold 1/10
+[2025-10-04 20:54:40]   - Starting fold 2/10
+[2025-10-04 20:54:46]   - Starting fold 3/10
+[2025-10-04 20:54:53]   - Starting fold 4/10
+[2025-10-04 20:54:59]   - Starting fold 5/10
+[2025-10-04 20:55:05]   - Starting fold 6/10
+[2025-10-04 20:55:10]   - Starting fold 7/10
+[2025-10-04 20:55:15]   - Starting fold 8/10
+[2025-10-04 20:55:20]   - Starting fold 9/10
+[2025-10-04 20:55:27]   - Starting fold 10/10
+[2025-10-04 20:55:36]   - Saved k-fold results to viz_out/kfold_results.png
+[2025-10-04 20:57:53] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 20:57:53]   - Reading features CSV
+[2025-10-04 20:57:54]   - Reading labels CSV
+[2025-10-04 20:57:54] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 20:57:54] STAGE TRAINING: Starting model training
+[2025-10-04 20:57:54]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 20:57:54]   - Splitting data into train and test sets
+[2025-10-04 20:57:54]   - Fitting RandomForest on training data
+[2025-10-04 20:57:57]   - Predicting on test set and computing metrics
+[2025-10-04 20:57:58] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 20:57:58]   - Computing cross-validation scores
+[2025-10-04 20:59:12]   - Preparing scores for ROC/PR plotting
+[2025-10-04 20:59:12]   - X_test shape=(5068, 37), y_test shape=(5068,)
+[2025-10-04 20:59:12]   - y_score preview: shape=(5068, 3), dtype=float64
+[2025-10-04 20:59:12]   - y_score sample=[[0.   0.53 0.47]
+ [0.95 0.04 0.01]
+ [0.02 0.61 0.37]
+ [0.   0.11 0.89]
+ [0.99 0.   0.01]
+ [0.97 0.01 0.02]
+ [0.96 0.04 0.  ]
+ [0.99 0.   0.01]]
+[2025-10-04 20:59:13]   - Saving train/test accuracy plot
+[2025-10-04 20:59:14] STAGE PERSISTENCE: Saving trained model to disk
+[2025-10-04 20:59:14]   - Saved model to model.joblib
+[2025-10-04 21:22:16] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 21:22:16]   - Reading features CSV
+[2025-10-04 21:22:16]   - Reading labels CSV
+[2025-10-04 21:22:16] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 21:22:16] STAGE TRAINING: Starting model training
+[2025-10-04 21:22:16]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 21:22:16]   - Splitting data into train and test sets
+[2025-10-04 21:22:17]   - Fitting RandomForest on training data
+[2025-10-04 21:22:20]   - Predicting on test set and computing metrics
+[2025-10-04 21:22:21] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 21:22:22]   - Computing cross-validation scores
+[2025-10-04 21:23:37]   - Preparing scores for ROC/PR plotting
+[2025-10-04 21:23:37]   - X_test shape=(5068, 37), y_test shape=(5068,)
+[2025-10-04 21:23:37]   - y_score preview: shape=(5068, 3), dtype=float64
+[2025-10-04 21:23:38]   - y_score sample=[[0.   0.53 0.47]
+ [0.95 0.04 0.01]
+ [0.02 0.61 0.37]
+ [0.   0.11 0.89]
+ [0.99 0.   0.01]
+ [0.97 0.01 0.02]
+ [0.96 0.04 0.  ]
+ [0.99 0.   0.01]]
+[2025-10-04 21:23:39]   - Saving train/test accuracy plot
+[2025-10-04 21:23:39] STAGE PERSISTENCE: Saving trained model to disk
+[2025-10-04 21:23:39]   - Saved model to model.joblib
+[2025-10-04 21:23:39]   - Aggregated evaluation failed: No module named 'Modelo'
+[2025-10-04 21:25:04] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 21:25:04]   - Reading features CSV
+[2025-10-04 21:25:05]   - Reading labels CSV
+[2025-10-04 21:25:05] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 21:25:05] STAGE TRAINING: Starting model training
+[2025-10-04 21:25:05]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 21:25:05]   - Splitting data into train and test sets
+[2025-10-04 21:25:05]   - Fitting RandomForest on training data
+[2025-10-04 21:25:08]   - Predicting on test set and computing metrics
+[2025-10-04 21:25:08] STAGE VISUALIZATION: Creating and saving visualizations

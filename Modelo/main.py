@@ -135,11 +135,37 @@ def train_save_model(X, y, output_path: str, params: Optional[dict] = None):
     ax = visualization.plot_cv_scores(scores)
     ax.figure.savefig(str(VIZOUT + "/cv_scores.png"))
 
-    #Plot True and false positives and negatives
-    ax = visualization.plot_binary_confusion(y_test, y_pred)
-    ax.figure.savefig(str(VIZOUT + "/binary_confusion.png"))
+    # Plot ROC AUC: prefer probability scores or decision function values
+    progress.step("Preparing scores for ROC/PR plotting")
+    progress.step(f"X_test shape={getattr(X_test, 'shape', None)}, y_test shape={getattr(y_test, 'shape', None)}")
+    if hasattr(clf, "predict_proba"):
+        try:
+            y_score = clf.predict_proba(X_test)
+        except Exception:
+            y_score = y_pred
+    elif hasattr(clf, "decision_function"):
+        try:
+            y_score = clf.decision_function(X_test)
+        except Exception:
+            y_score = y_pred
+    else:
+        y_score = y_pred
 
-    progress.step("Plotting true-positives vs others")
+    progress.step(f"y_score preview: shape={np.asarray(y_score).shape}, dtype={np.asarray(y_score).dtype}")
+    # Show a small sample for quick inspection
+    try:
+        sample_vals = np.asarray(y_score)[:8]
+    except Exception:
+        sample_vals = str(type(y_score))
+    progress.step(f"y_score sample={sample_vals}")
+
+    ax = visualization.plot_roc_auc(y_test, y_score)
+    ax.figure.savefig(str(VIZOUT + "/roc_auc.png"))
+
+    # PR curve (use same y_score selection as above)
+    ax = visualization.plot_pr_auc(y_test, y_score)
+    ax.figure.savefig(str(VIZOUT + "/pr_auc.png"))
+
     # Plot true positives vs other predictions and save
     ax = visualization.plot_truepositives_vs_others(y_test, y_pred)
     ax.figure.savefig(str(VIZOUT + "/tp_vs_others.png"))
@@ -153,6 +179,24 @@ def train_save_model(X, y, output_path: str, params: Optional[dict] = None):
     # Persist trained model to disk and inform the user
     joblib.dump(clf, output_path)
     progress.step(f"Saved model to {output_path}")
+
+    # Run aggregated evaluation and save metrics
+    try:
+        from Modelo.metrics import evaluate_model
+        progress.stage("evaluation", "Computing aggregated evaluation metrics")
+        metrics = evaluate_model(clf, X_train, X_test, y_train, y_test, compute_permutation=False)
+        import json
+        metrics_path = str(VIZOUT + "/metrics.json")
+        with open(metrics_path, 'w', encoding='utf-8') as fh:
+            json.dump(metrics, fh, default=lambda o: o.tolist() if hasattr(o, 'tolist') else str(o), indent=2)
+        progress.step(f"Saved aggregated metrics to {metrics_path}")
+
+        # Print a concise human-readable summary
+        summary_keys = ["accuracy", "balanced_accuracy", "log_loss", "brier_score", "cohen_kappa", "mcc"]
+        summary = {k: metrics.get(k) for k in summary_keys}
+        progress.step(f"Metrics summary: {summary}")
+    except Exception as ex:
+        progress.step(f"Aggregated evaluation failed: {ex}")
 
 
 def ten_fold_cross_validation(estimator, X, y, random_state: int = RANDOM_STATE):
@@ -247,15 +291,15 @@ def main():
 
     train_save_model(X, y, model_out, rf_params)
     # Ensure visualization output directory exists
-    import os
-    os.makedirs(VIZOUT, exist_ok=True)
+    briescore = visualization.compute_brier_score(y, np.asarray(y))  # Dummy example; replace with real scores if available
+    print(f"Brier score: {briescore}")
 
     progress.stage("kfold_evaluation", "Running k-fold evaluation and saving results")
     results = ten_fold_test_saved_model(model_out, X, y)
     fig, axes = visualization.plotkfold_results(results)
-    fig_path = os.path.join(VIZOUT, "kfold_results.png")
-    fig.savefig(str(fig_path))
-    progress.step(f"Saved k-fold results to {fig_path}")
+    fig.savefig(str(VIZOUT + "/kfold_results.png"))
+
+    progress.step(f"Saved k-fold results to {VIZOUT + '/kfold_results.png'}")
 
 if __name__ == "__main__":
     main()

@@ -26,8 +26,12 @@ from typing import Optional, Sequence, Mapping
 import matplotlib.pyplot as plt
 import matplotlib.cm as mcm
 import numpy as np
+from scipy import sparse as sp
 from sklearn.model_selection import cross_val_score
-
+from sklearn.metrics import roc_curve, auc, roc_auc_score
+from sklearn.metrics import brier_score_loss
+from sklearn.metrics import precision_recall_curve, average_precision_score
+from sklearn.preprocessing import label_binarize
 
 def plot_confusion_matrix(cm: np.ndarray, labels: Sequence[str], ax: Optional[plt.Axes] = None):
     """Plot a confusion matrix (2D array) with labels.
@@ -48,7 +52,7 @@ def plot_confusion_matrix(cm: np.ndarray, labels: Sequence[str], ax: Optional[pl
     ticks = np.arange(len(labels))
 
     # Draw heatmap of the confusion matrix
-    cmap = plt.get_cmap('Blues')
+    cmap = mcm.get_cmap('Blues')
     im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
     ax.figure.colorbar(im, ax=ax)
 
@@ -198,6 +202,311 @@ def compute_cv_scores(estimator, X, y, cv: int = 10, scoring: str = 'accuracy'):
     # unfitted estimator or one configured with specific hyperparameters.
     scores = cross_val_score(estimator, X, y, cv=cv, scoring=scoring, n_jobs=-1)
     return scores
+
+
+def plot_roc_auc(y_true, y_score, ax: Optional[plt.Axes] = None, pos_label=1, savepath: Optional[str] = None, show: bool = False):
+    """Plot ROC curve and annotate AUC.
+
+    This function is robust to being passed either continuous scores (recommended)
+    or discrete predicted labels. It supports binary and multiclass inputs.
+
+    Behavior:
+    - Binary: plots single ROC curve and AUC.
+    - Multiclass: plots per-class ROC curves and a micro-average curve; overall
+      AUC is computed with `multi_class='ovr'` and `average='macro'`.
+
+    Args:
+        y_true: true labels (array-like)
+        y_score: either continuous scores/probabilities for the positive class
+                 (preferred) or discrete predicted labels. For multiclass, a
+                 2D array of shape (n_samples, n_classes) with scores is also accepted.
+        ax: optional Axes
+        pos_label: positive label for binary case (default=1)
+        savepath: optional PNG path to save the created figure
+        show: whether to call plt.show()
+
+    Returns:
+        ax: matplotlib Axes with the ROC plot
+    """
+    y_true = np.asarray(y_true)
+    y_score = np.asarray(y_score)
+
+    classes = np.unique(y_true)
+    n_classes = len(classes)
+
+    created_fig = None
+    if ax is None:
+        created_fig, ax = plt.subplots(figsize=(7, 6))
+
+    # Binary case
+    if n_classes == 2:
+        # If y_score is 2D (probabilities), pick the column for pos_label when available
+        if y_score.ndim == 2 and y_score.shape[1] >= 2:
+            # try to find index of pos_label in classes
+            try:
+                idx = list(classes).index(pos_label)
+            except ValueError:
+                idx = 1
+            score = y_score[:, idx]
+        else:
+            # If discrete predicted labels given (1D), convert to indicator for positive class
+            if y_score.ndim == 1:
+                score = (y_score == pos_label).astype(float)
+            else:
+                score = y_score
+
+        # Compute ROC and AUC (roc_auc_score accepts discrete scores though
+        # continuous probabilities are preferred)
+        fpr, tpr, _ = roc_curve(y_true, score, pos_label=pos_label)
+        auc_score = float(roc_auc_score(y_true, score))
+        ax.plot(fpr, tpr, color='tab:blue', lw=2, label=f'ROC (AUC = {auc_score:.3f})')
+
+    else:
+        # Multiclass: need binarized form for curves
+        y_true_bin = label_binarize(y_true, classes=classes)
+        # Ensure dense numpy arrays for later indexing and ravel operations
+        toarr = getattr(y_true_bin, 'toarray', None)
+        if callable(toarr):
+            y_true_bin = toarr()
+        y_true_bin = np.asarray(y_true_bin)
+
+        # Convert y_score to an (n_samples, n_classes) array if it's not already
+        if y_score.ndim == 1:
+            # discrete predicted labels -> binarize
+            y_score_bin = label_binarize(y_score, classes=classes)
+            toarr = getattr(y_score_bin, 'toarray', None)
+            if callable(toarr):
+                y_score_bin = toarr()
+            y_score_bin = np.asarray(y_score_bin)
+        elif y_score.ndim == 2 and y_score.shape[1] == n_classes:
+            y_score_bin = y_score
+        else:
+            # fallback: attempt to binarize along classes
+            try:
+                y_score_bin = label_binarize(y_score, classes=classes)
+                toarr = getattr(y_score_bin, 'toarray', None)
+                if callable(toarr):
+                    y_score_bin = toarr()
+                y_score_bin = np.asarray(y_score_bin)
+            except Exception:
+                raise ValueError("y_score shape is incompatible with multiclass y_true")
+
+        # Compute per-class ROC and plot
+        fpr = dict()
+        tpr = dict()
+        roc_auc = dict()
+        for i in range(n_classes):
+            fpr[i], tpr[i], _ = roc_curve(y_true_bin[:, i], y_score_bin[:, i])
+            roc_auc[i] = auc(fpr[i], tpr[i])
+            ax.plot(fpr[i], tpr[i], lw=1, alpha=0.6, label=f'Class {classes[i]} (AUC={roc_auc[i]:.3f})')
+
+        # Micro-average ROC
+        fpr_micro, tpr_micro, _ = roc_curve(y_true_bin.ravel(), y_score_bin.ravel())
+        auc_micro = auc(fpr_micro, tpr_micro)
+        ax.plot(fpr_micro, tpr_micro, color='black', lw=2, label=f'micro-average (AUC={auc_micro:.3f})')
+
+        auc_score = float(roc_auc_score(y_true_bin, y_score_bin, multi_class='ovr', average='macro'))
+
+    # Diagonal reference
+    ax.plot([0, 1], [0, 1], color='gray', lw=1, linestyle='--', label='Chance')
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.05)
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.set_title('Receiver Operating Characteristic (ROC)')
+    ax.legend(loc='lower right')
+    ax.grid(linestyle='--', alpha=0.3)
+
+    plt.tight_layout()
+
+    if savepath is not None and created_fig is not None:
+        try:
+            created_fig.savefig(savepath, dpi=150, bbox_inches='tight')
+        except Exception:
+            plt.savefig(savepath, dpi=150, bbox_inches='tight')
+
+    if show:
+        plt.show()
+
+    return ax
+
+
+def plot_pr_auc(y_true, y_score, ax: Optional[plt.Axes] = None, pos_label=1, savepath: Optional[str] = None, show: bool = False):
+    """Plot Precision-Recall curve and annotate Average Precision (AP) for binary classification.
+
+    Args:
+        y_true: true binary labels (array-like)
+        y_score: target scores; probabilities or decision function values for the
+            positive class (array-like, same length as y_true)
+        ax: optional matplotlib Axes to draw on. If None, a new figure is created.
+        pos_label: label considered positive when building PR curve (default=1)
+        savepath: optional path to save the figure as PNG
+        show: whether to call plt.show() after plotting
+
+    Returns:
+        ax: the Axes containing the Precision-Recall plot
+    """
+    # Normalize inputs
+    y_true = np.asarray(y_true)
+    y_score = np.asarray(y_score)
+
+    # If y_true looks already binarized/multilabel (2D), treat accordingly
+    if y_true.ndim == 2:
+        y_true_bin = y_true
+        n_classes = y_true.shape[1]
+        classes = list(range(n_classes))
+    else:
+        classes = np.unique(y_true)
+        n_classes = len(classes)
+
+    created_fig = None
+    if ax is None:
+        created_fig, ax = plt.subplots(figsize=(6, 5))
+
+    # Binary case
+    if n_classes == 2:
+        # Ensure y_true is 1-D labels (0/1 or original labels)
+        if y_true.ndim == 2:
+            # collapse to single label vector if necessary
+            if y_true.shape[1] == 2:
+                y_true = np.argmax(y_true, axis=1)
+            else:
+                raise ValueError("Unsupported binarized y_true shape for binary PR curve")
+
+        # Extract probability-like scores for positive class when possible
+        if y_score.ndim == 2 and y_score.shape[1] >= 2:
+            try:
+                idx = list(classes).index(pos_label)
+            except ValueError:
+                idx = 1
+            score = y_score[:, idx]
+        else:
+            # If discrete predicted labels given as y_score, convert to indicator
+            if y_score.ndim == 1 and set(np.unique(y_score)).issubset(set(classes)):
+                score = (y_score == pos_label).astype(float)
+            else:
+                score = y_score
+
+        precision, recall, _ = precision_recall_curve(y_true, score, pos_label=pos_label)
+        ap = float(average_precision_score(y_true, score))
+        ax.plot(recall, precision, color='tab:purple', lw=2, label=f'PR (AP = {ap:.3f})')
+
+    else:
+        # Multiclass: ensure y_true_bin and y_score_bin are (n_samples, n_classes)
+        if y_true.ndim == 1:
+            y_true_bin = label_binarize(y_true, classes=classes)
+            toarr = getattr(y_true_bin, 'toarray', None)
+            if callable(toarr):
+                y_true_bin = toarr()
+            y_true_bin = np.asarray(y_true_bin)
+        else:
+            y_true_bin = np.asarray(y_true)
+
+        # Prepare y_score_bin
+        if y_score.ndim == 1:
+            # discrete predicted labels -> one-hot
+            y_score_bin = label_binarize(y_score, classes=classes)
+            if sp is not None and sp.issparse(y_score_bin):
+                y_score_bin = y_score_bin.toarray()
+            y_score_bin = np.asarray(y_score_bin)
+        elif y_score.ndim == 2 and y_score.shape[1] == n_classes:
+            y_score_bin = y_score
+        else:
+            # Try to coerce
+            try:
+                y_score_bin = label_binarize(y_score, classes=classes)
+                if sp is not None and sp.issparse(y_score_bin):
+                    y_score_bin = y_score_bin.toarray()
+                y_score_bin = np.asarray(y_score_bin)
+            except Exception:
+                raise ValueError("y_score shape is incompatible with multiclass y_true for PR curve")
+
+        # Per-class PR curves and AP
+        ap_per_class = []
+        for i in range(n_classes):
+            prec, rec, _ = precision_recall_curve(y_true_bin[:, i], y_score_bin[:, i])
+            ap_i = float(average_precision_score(y_true_bin[:, i], y_score_bin[:, i]))
+            ap_per_class.append(ap_i)
+            ax.plot(rec, prec, lw=1, alpha=0.6, label=f'Class {classes[i]} (AP={ap_i:.3f})')
+
+        # Micro-average across classes
+        prec_micro, rec_micro, _ = precision_recall_curve(y_true_bin.ravel(), y_score_bin.ravel())
+        ap_micro = float(average_precision_score(y_true_bin, y_score_bin, average='micro'))
+        ax.plot(rec_micro, prec_micro, color='black', lw=2, label=f'micro-average (AP={ap_micro:.3f})')
+
+        ap = float(np.mean(ap_per_class))
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.05)
+    ax.set_xlabel('Recall')
+    ax.set_ylabel('Precision')
+    ax.set_title('Precision-Recall Curve')
+    ax.legend(loc='lower left')
+    ax.grid(linestyle='--', alpha=0.3)
+
+    plt.tight_layout()
+
+    if savepath is not None and created_fig is not None:
+        try:
+            created_fig.savefig(savepath, dpi=150, bbox_inches='tight')
+        except Exception:
+            plt.savefig(savepath, dpi=150, bbox_inches='tight')
+
+    if show:
+        plt.show()
+
+    return ax
+
+
+def compute_brier_score(y_true, y_prob, pos_label=1):
+    """Compute the Brier score for binary or multiclass probability predictions.
+
+    For binary classification this wraps sklearn.metrics.brier_score_loss.
+    For multiclass, the score is computed as the mean squared error between
+    the one-hot encoded true labels and the predicted probability matrix.
+
+    Args:
+        y_true: true labels (array-like)
+        y_prob: predicted probabilities. For binary either a 1-D array with
+                probabilities for the positive class or a 2-D array of shape
+                (n_samples, n_classes) for multiclass.
+        pos_label: label considered positive in binary case (default=1)
+
+    Returns:
+        float: Brier score (lower is better)
+    """
+    y_true = np.asarray(y_true)
+    y_prob = np.asarray(y_prob)
+
+    classes = np.unique(y_true)
+    n_classes = len(classes)
+
+    # Binary case
+    if n_classes == 2:
+        # If y_prob is 2D, select the column corresponding to pos_label
+        if y_prob.ndim == 2 and y_prob.shape[1] >= 2:
+            try:
+                idx = list(classes).index(pos_label)
+            except ValueError:
+                idx = 1
+            prob = y_prob[:, idx]
+        else:
+            prob = y_prob
+        return float(brier_score_loss(y_true, prob, pos_label=pos_label))
+
+    # Multiclass: expect y_prob to be shape (n_samples, n_classes)
+    if y_prob.ndim != 2 or y_prob.shape[1] != n_classes:
+        raise ValueError("For multiclass Brier score, y_prob must be shape (n_samples, n_classes)")
+
+    # One-hot encode true labels in the class order
+    y_true_bin = label_binarize(y_true, classes=classes)
+    if hasattr(y_true_bin, 'toarray'):
+        y_true_bin = y_true_bin.toarray()
+    y_true_bin = np.asarray(y_true_bin)
+
+    # Mean squared error across all classes and samples
+    mse = np.mean((y_true_bin - y_prob) ** 2)
+    return float(mse)
 
 def plotkfold_results(results: Mapping[str, np.ndarray], ax: Optional[plt.Axes] = None):
     """Plot per-fold k-fold results produced by `ten_fold_cross_validation`.
