@@ -361,7 +361,7 @@ class MainWindow(QMainWindow):
         self.train_controls_frame.setLineWidth(2)
         self.train_controls_layout = QHBoxLayout(self.train_controls_frame)
 
-    # Features and Labels selectors (split dataset)
+        # Features and Labels selectors (split dataset)
         # Features selector
         self.label_features = QLabel("Features CSV:")
         self.train_controls_layout.addWidget(self.label_features)
@@ -564,7 +564,9 @@ class MainWindow(QMainWindow):
         self.tabWidget.addTab(self.tabTrain, "Train")
 
         # Rename 'Model' tab to 'Evaluation'
-        self.tabWidget.addTab(self.tabModelos, "Evaluation")
+        self.tabWidget.addTab(self.tabModelos, "Model Prediction")
+        
+        self.tabWidget.addTab(self.tabTrain, "Model Training")
         
         # ========== PESTAÑA DE DATOS (DATABASE) ==========
         self.tabDatos = QWidget()
@@ -714,7 +716,7 @@ class MainWindow(QMainWindow):
         self.datosLayout.addWidget(self.db_viewer_frame)
         
         # Rename 'Data' tab to 'Visualize'
-        self.tabWidget.addTab(self.tabDatos, "Visualize")
+        self.tabWidget.addTab(self.tabDatos, "DataBase View")
         
         # Agregar el TabWidget al layout principal
         self.mainLayout.addWidget(self.tabWidget)
