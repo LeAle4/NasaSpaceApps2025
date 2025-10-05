@@ -48,6 +48,10 @@ from sklearn.metrics import (
 )
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score
 from sklearn.inspection import permutation_importance
+from sklearn.model_selection import StratifiedKFold
+
+# Progress helper used across modules
+import progress
 
 # Brier score util: use existing visualization.compute_brier_score if available
 try:
@@ -196,8 +200,8 @@ def evaluate_model(
 
     return results
 
-def ten_fold_cross_validation(estimator, X, y, random_state: int = RANDOM_STATE):
-    """Run a stratified 10-fold cross-validation and return per-fold metrics.
+def ten_fold_cross_validation(estimator, X, y, n_splits: int = 10, random_state: int = 42):
+    """Run a stratified n-fold cross-validation and return per-fold metrics.
 
     Args:
         estimator: an sklearn estimator (unfitted)
@@ -212,7 +216,7 @@ def ten_fold_cross_validation(estimator, X, y, random_state: int = RANDOM_STATE)
     X_arr = np.asarray(X)
     y_arr = np.asarray(y)
 
-    skf = StratifiedKFold(n_splits=KFOLDDIV, shuffle=True, random_state=random_state)
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
     accs = []
     precisions = []
@@ -221,12 +225,13 @@ def ten_fold_cross_validation(estimator, X, y, random_state: int = RANDOM_STATE)
 
     progress.stage("cross_validation", "Running stratified 10-fold cross-validation")
     fold = 0
+
     for train_idx, test_idx in skf.split(X_arr, y_arr):
         X_train, X_test = X_arr[train_idx], X_arr[test_idx]
         y_train, y_test = y_arr[train_idx], y_arr[test_idx]
 
         fold += 1
-        progress.step(f"Starting fold {fold}/{KFOLDDIV}")
+        progress.step(f"Starting fold {fold}/{n_splits}")
 
         est = estimator
         # If estimator is a class instance that was already fitted, clone is safer,

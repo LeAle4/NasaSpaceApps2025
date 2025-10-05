@@ -28,17 +28,6 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 # Progress helpers: print timestamped stage/step messages
 import progress
 
-FEATURE_PATH = "data/non_candidates_processed_features.csv"
-LABEL_PATH = "data/non_candidates_processed_labels.csv"
-MODELOUT = "model.joblib"
-VIZOUT = "viz_out"
-TEST_SIZE = 0.4
-RANDOM_STATE = 420
-KFOLDDIV = 10  # number of folds for cross-validation
-
-RF_ESTIMATORS = 100
-RF_N_JOBS = -1
-
 class Model:
     """Light wrapper around a scikit-learn RandomForestClassifier.
 
@@ -168,7 +157,7 @@ def visualize_model():
     # Intentionally left blank; visualization handled in `visualization.py`.
     return None
 
-def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional[int] = None):
+def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional[int] = None, test_size: float = 0.4):
     """Train a RandomForest model and return a results dict.
 
     This function only performs the data split and fitting. It returns a
@@ -188,10 +177,10 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
     wrapper = Model(params=params, random_state=random_state)
 
     progress.step("Splitting data into train and test sets")
-    # Respect caller-provided random_state; fall back to module-level constant
-    rs = RANDOM_STATE if random_state is None else random_state
+    # Respect caller-provided random_state; fall back to a sane default
+    rs = 42 if random_state is None else random_state
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=TEST_SIZE, random_state=rs, stratify=y
+        X, y, test_size=test_size, random_state=rs, stratify=y
     )
 
     progress.step("Fitting RandomForest on training data")
@@ -239,7 +228,7 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
     progress.step("Training complete; returning results")
     return results
 
-def create_visualizations(results: dict, output_path: str | None = None, viz_out: str = VIZOUT):
+def create_visualizations(results: dict):
     """Given training results, create visualization Graph objects and return them.
 
     This function builds the standard diagnostic plots using the
@@ -298,7 +287,7 @@ def create_visualizations(results: dict, output_path: str | None = None, viz_out
     return graphs
 
 
-def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, viz_out: str = VIZOUT, compute_permutation: bool = False, random_state: Optional[int] = None):
+def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, compute_permutation: bool = False, random_state: Optional[int] = None):
     """Compute a comprehensive set of evaluation metrics and save them to disk.
 
     This helper prefers the project's `metrics.evaluate_model` function when
@@ -391,7 +380,7 @@ def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, viz_out: str
         if compute_permutation:
             try:
                 from sklearn.inspection import permutation_importance as _perm
-                rs = RANDOM_STATE if random_state is None else random_state
+                rs = 42 if random_state is None else random_state
                 perm = _perm(clf, X_test, y_test, n_repeats=30, random_state=rs)
                 metrics['permutation_importances'] = {
                     'importances_mean': perm.importances_mean.tolist(),

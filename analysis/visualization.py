@@ -655,3 +655,20 @@ def plotkfold_results(results: Mapping[str, np.ndarray], ax: Optional[plt.Axes] 
 
     plt.tight_layout()
     return Graph.from_figure(fig), axes
+
+def save_graphs(graphs: Sequence[Graph], paths: Sequence[str], dpi: int = 150):
+    """Save multiple Graph objects to disk.
+
+    Args:
+        graphs: sequence of Graph instances
+        paths: sequence of file paths (same length as graphs)
+        dpi: resolution in dots per inch (default=150)
+
+    Raises:
+        ValueError if lengths of graphs and paths do not match.
+    """
+    if len(graphs) != len(paths):
+        raise ValueError("Length of graphs and paths must match")
+
+    for g, p in zip(graphs, paths):
+        g.save(p, dpi=dpi)
