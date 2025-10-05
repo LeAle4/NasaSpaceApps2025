@@ -167,7 +167,6 @@ class MainWindow(QMainWindow):
         
     def setupUi(self):
         self.setObjectName("HopeFinder")
-        self.resize(800, 600)
         
         # Widget central
         self.centralwidget = QWidget(self)
