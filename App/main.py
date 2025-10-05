@@ -18,6 +18,7 @@ class HopeFinderApp:
         self.backend.batch_info_signal.connect(self.frontend.add_batch_info)
         self.frontend.remove_batch_signal.connect(self.backend.removeBatch)
         self.frontend.clear_batches_signal.connect(self.backend.clearBatches)
+        self.frontend.save_to_database_signal.connect(self.backend.addBatchToDatabase)
     
     def run(self):
         self.frontend.show()

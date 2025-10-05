@@ -14,6 +14,7 @@ class MainWindow(QMainWindow):
     remove_batch_signal = pyqtSignal(int)
     clear_batches_signal = pyqtSignal()
     start_prediction_signal = pyqtSignal(int)
+    save_to_database_signal = pyqtSignal(int)
     def __init__(self):
         super().__init__()
         self.setupUi()
@@ -64,7 +65,7 @@ class MainWindow(QMainWindow):
         # ListWidget para mostrar archivos
         self.lista_archivos = QListWidget()
         self.lista_archivos.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.lista_archivos.itemSelectionChanged.connect(self.update_prediction_button)
+        self.lista_archivos.itemSelectionChanged.connect(self.enable_button_selection)
         self.frame_layout.addWidget(self.lista_archivos)
         
         # Botones para gestionar archivos
@@ -78,8 +79,13 @@ class MainWindow(QMainWindow):
         self.btn_clear.clicked.connect(self.limpiar_archivos)
         self.btn_clear.setEnabled(False)
         
+        self.btn_save_to_db = QPushButton('Save to Database')
+        self.btn_save_to_db.clicked.connect(self.save_to_database)
+        self.btn_save_to_db.setEnabled(False)  # Placeholder for future functionality
+        
         self.buttons_layout.addWidget(self.btn_remove)
         self.buttons_layout.addWidget(self.btn_clear)
+        self.buttons_layout.addWidget(self.btn_save_to_db)
         self.buttons_layout.addStretch()
         
         self.frame_layout.addLayout(self.buttons_layout)
@@ -182,7 +188,7 @@ class MainWindow(QMainWindow):
         self.btn_clear.setEnabled(True)
         self.btn_remove.setEnabled(True)
         self.statusbar.showMessage("Batch loaded successfully", 2000)
-        self.update_prediction_button()
+        self.enable_button_selection()
         
     def remover_archivo(self):
         """Elimina el archivo seleccionado de la lista"""
@@ -213,6 +219,14 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage("Todos los archivos han sido removidos", 2000)
             self.clear_batches_signal.emit()
     
+    def save_to_database(self):
+        items_seleccionados = self.lista_archivos.selectedItems()
+        if not items_seleccionados:
+            return
+        
+        item = items_seleccionados[0]
+        self.save_to_database_signal.emit(item.data(Qt.UserRole))
+        
     def start_prediction(self):
         pass
 
@@ -226,12 +240,16 @@ class MainWindow(QMainWindow):
         else:
             QMessageBox.information(self, "Information", mensaje)
     
-    def update_prediction_button(self):
+    def enable_button_selection(self):
         """Habilita el botón de predicción si hay un archivo seleccionado"""
         if self.lista_archivos.selectedItems():
             self.btn_start_prediction.setEnabled(True)
+            self.btn_save_to_db.setEnabled(True)
         else:
             self.btn_start_prediction.setEnabled(False)
+        if self.lista_archivos.count() == 0:
+            self.btn_clear.setEnabled(False)
+            self.btn_remove.setEnabled(False)
    
 
 
