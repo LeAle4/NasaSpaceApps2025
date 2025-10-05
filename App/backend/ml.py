@@ -9,6 +9,8 @@ import os
 import pandas as pd
 
 from .analysis import model as model_wrapper
+from .analysis import visualization as visualization
+import os
 
 
 def _find_model_path(candidates: Optional[Tuple[str, ...]] = None) -> Optional[str]:
@@ -45,10 +47,15 @@ def predict_batch(
     if batch_df is None:
         raise ValueError("batch_df is None")
 
-    # extract features
-    features = batch_df[data_headers]
+    # verify that all requested feature columns exist and preserve order
+    missing = [c for c in data_headers if c not in batch_df.columns]
+    if missing:
+        raise KeyError(f"Missing feature columns in batch_df: {missing}")
 
-    # coerce numeric and fill missing
+    # extract features in the exact order provided by data_headers
+    features = batch_df.loc[:, data_headers]
+
+    # coerce numeric and fill missing (preserve column order)
     X = features.copy()
     X = X.apply(pd.to_numeric, errors='coerce')
     if X.isnull().any().any():
@@ -63,6 +70,26 @@ def predict_batch(
     # load model wrapper (may raise)
     clf_wrapper = model_wrapper.Model.load(resolved_model)
     estimator = getattr(clf_wrapper, 'model', clf_wrapper)
+
+    # Ensure feature order matches what the estimator expects (some sklearn
+    # estimators require the same column order used during fit and expose
+    # `feature_names_in_`). If present, reorder X to match. If not present,
+    # we continue with the order derived from `data_headers`.
+    try:
+        expected_features = getattr(estimator, 'feature_names_in_', None)
+        if expected_features is not None:
+            # feature_names_in_ may be numpy array - ensure same type and values
+            expected = list(expected_features)
+            # check for missing features
+            missing_from_expected = [f for f in expected if f not in X.columns]
+            if missing_from_expected:
+                raise KeyError(f"Model expects features not present in batch_df: {missing_from_expected}")
+            # reorder X to match expected order
+            X = X.loc[:, expected]
+    except Exception:
+        # Any issue inspecting/reordering should not crash here; raise a
+        # clearer KeyError up the stack so callers can show a friendly message.
+        raise
 
     # run predictions
     preds = estimator.predict(X)
@@ -101,4 +128,67 @@ def predict_batch(
         'results_df': results_df,
         'confirmed_df': confirmed_df,
         'rejected_df': rejected_df,
+    }
+
+
+def train_from_database(
+    confirmed_csv: str,
+    rejected_csv: str,
+    data_headers: list,
+    out_dir: Optional[str] = None,
+    params: Optional[dict] = None,
+    random_state: Optional[int] = None,
+    test_size: float = 0.4,
+):
+    """Train a model using two CSV files (confirmed/rejected) and produce visualizations.
+
+    Returns a dict with keys: status, message, saved_paths (list), metrics (dict)
+    Raises exceptions on unexpected IO/ML errors so callers (backend) can present them.
+    """
+    if not os.path.exists(confirmed_csv):
+        raise FileNotFoundError(f"Confirmed CSV not found: {confirmed_csv}")
+    if not os.path.exists(rejected_csv):
+        raise FileNotFoundError(f"Rejected CSV not found: {rejected_csv}")
+
+    # Load CSVs
+    df_conf = pd.read_csv(confirmed_csv)
+    df_rej = pd.read_csv(rejected_csv)
+
+    # Label and combine
+    df_conf = df_conf.copy()
+    df_rej = df_rej.copy()
+    df_conf['__label__'] = 1
+    df_rej['__label__'] = 0
+    df = pd.concat([df_conf, df_rej], ignore_index=True)
+
+    # Verify features present
+    missing = [c for c in data_headers if c not in df.columns]
+    if missing:
+        raise KeyError(f"Missing feature columns in combined database: {missing}")
+
+    X = df.loc[:, data_headers].copy()
+    X = X.apply(pd.to_numeric, errors='coerce').fillna(0)
+    y = df['__label__']
+
+    # Delegate training to analysis.model.train_save_model
+    results = model_wrapper.train_save_model(X, y, params=params, random_state=random_state, test_size=test_size)
+
+    # Create visualizations (Graph objects)
+    graphs = model_wrapper.create_visualizations(results, random_state=random_state)
+
+    # Save graphs to out_dir (default App/viz_out)
+    if out_dir is None:
+        out_dir = os.path.join(os.getcwd(), 'App', 'viz_out')
+    saved_paths = visualization.save_graphs(graphs, out_dir)
+
+    metrics = {
+        'train_acc': float(results.get('train_acc')) if results.get('train_acc') is not None else None,
+        'test_acc': float(results.get('test_acc')) if results.get('test_acc') is not None else None,
+    }
+
+    return {
+        'status': 'success',
+        'message': f"Training complete. Saved {len(saved_paths)} visualization(s)",
+        'saved_paths': saved_paths,
+        'metrics': metrics,
     }

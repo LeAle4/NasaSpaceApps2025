@@ -9,7 +9,10 @@ import os
 
 
 class DataLoaderThread(QThread):
-    """Thread para cargar datos sin congelar la interfaz"""
+    """Background thread to load a DataFrame slice without blocking the UI.
+
+    Emits `data_loaded(DataFrame, batch_id)` when the requested subset is ready.
+    """
     data_loaded = pyqtSignal(pd.DataFrame, int)
     
     def __init__(self, dataframe, batch_id, start_row, end_row):
@@ -26,7 +29,11 @@ class DataLoaderThread(QThread):
 
 
 class DatabaseSortThread(QThread):
-    """Thread para ordenar datos sin congelar la interfaz"""
+    """Background thread that sorts a DataFrame and emits the sorted result.
+
+    The thread attempts numeric-aware sorting for object dtype columns to give
+    natural numeric ordering when possible, falling back to pandas sort_values.
+    """
     sort_completed = pyqtSignal(pd.DataFrame)
     
     def __init__(self, dataframe, column, ascending):
@@ -61,7 +68,11 @@ class DatabaseSortThread(QThread):
 
 
 class DatabaseSearchThread(QThread):
-    """Thread para buscar datos sin congelar la interfaz"""
+    """Background thread that filters a DataFrame by substring and optionally sorts it.
+
+    Emits `search_completed(DataFrame)` when the filtered (and possibly sorted)
+    DataFrame is ready.
+    """
     search_completed = pyqtSignal(pd.DataFrame)
     
     def __init__(self, dataframe, column, search_text, sort_column=None, ascending=True):
@@ -114,9 +125,11 @@ class MainWindow(QMainWindow):
     remove_batch_signal = pyqtSignal(int)
     clear_batches_signal = pyqtSignal()
     start_prediction_signal = pyqtSignal(int)
+    load_model_signal = pyqtSignal(str, int)  # model_path, batch_id (-1 for all)
     save_to_database_signal = pyqtSignal(int)
     request_batch_data_signal = pyqtSignal(int)
     request_database_signal = pyqtSignal(str)  # Nueva señal para solicitar datos de la DB
+    start_training_signal = pyqtSignal(str, str, str)  # confirmed_csv, rejected_csv, out_dir
     
     def __init__(self):
         super().__init__()
@@ -199,7 +212,11 @@ class MainWindow(QMainWindow):
         self.btn_start_prediction = QPushButton('Start Prediction')
         self.btn_start_prediction.clicked.connect(self.start_prediction)
         self.btn_start_prediction.setEnabled(False)
-        
+
+        self.btn_load_model = QPushButton('Load Model')
+        self.btn_load_model.clicked.connect(self.load_model_clicked)
+        self.btn_load_model.setEnabled(False)
+
         self.btn_abrir_csv = QPushButton('Add Data Batch')
         self.btn_abrir_csv.clicked.connect(self.open_csv_batch)
         
@@ -216,6 +233,7 @@ class MainWindow(QMainWindow):
         self.btn_save_to_db.setEnabled(False)
         
         self.buttons_layout.addWidget(self.btn_start_prediction)
+        self.buttons_layout.addWidget(self.btn_load_model)
         self.buttons_layout.addWidget(self.btn_abrir_csv)
         self.buttons_layout.addWidget(self.btn_remove)
         self.buttons_layout.addWidget(self.btn_clear)
@@ -225,6 +243,33 @@ class MainWindow(QMainWindow):
         self.frame_layout.addLayout(self.buttons_layout)
         
         self.modelosLayout.addWidget(self.batch_files_frame)
+
+        # ===== Training from database controls =====
+        self.train_frame = QFrame()
+        self.train_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        self.train_frame.setLineWidth(1)
+        self.train_layout = QHBoxLayout(self.train_frame)
+
+        self.label_train = QLabel("Train model from database:")
+        self.train_layout.addWidget(self.label_train)
+
+        self.btn_select_confirmed = QPushButton('Select Confirmed CSV')
+        self.btn_select_confirmed.clicked.connect(self.select_confirmed_csv)
+        self.train_layout.addWidget(self.btn_select_confirmed)
+
+        self.btn_select_rejected = QPushButton('Select Rejected CSV')
+        self.btn_select_rejected.clicked.connect(self.select_rejected_csv)
+        self.train_layout.addWidget(self.btn_select_rejected)
+
+        self.btn_select_outdir = QPushButton('Output Folder')
+        self.btn_select_outdir.clicked.connect(self.select_outdir)
+        self.train_layout.addWidget(self.btn_select_outdir)
+
+        self.btn_start_training = QPushButton('Start Training')
+        self.btn_start_training.clicked.connect(self.start_training_clicked)
+        self.train_layout.addWidget(self.btn_start_training)
+
+        self.modelosLayout.addWidget(self.train_frame)
         
         # Frame para mostrar datos del batch seleccionado
         self.data_viewer_frame = QFrame()
@@ -463,7 +508,11 @@ class MainWindow(QMainWindow):
     # ========== MÉTODOS ORIGINALES (PESTAÑA MODELO) ==========
     
     def open_csv_batch(self):
-        """Abre diálogo para seleccionar CSV con validaciones"""
+        """Open a file dialog to select a CSV batch and perform basic validation.
+
+        Emits `load_csv_signal(file_path)` when a valid CSV is selected. UI
+        errors are shown with QMessageBox dialogs.
+        """
         try:
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
@@ -502,6 +551,37 @@ class MainWindow(QMainWindow):
                 f"Error al abrir el archivo:\n{str(e)}"
             )
             return None
+
+    # ===== Training-related UI handlers =====
+    def select_confirmed_csv(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select confirmed CSV", "", "CSV Files (*.csv);;All files (*)")
+        if file_path:
+            self._confirmed_csv = file_path
+            self.statusbar.showMessage(f"Confirmed CSV selected", 2000)
+
+    def select_rejected_csv(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select rejected CSV", "", "CSV Files (*.csv);;All files (*)")
+        if file_path:
+            self._rejected_csv = file_path
+            self.statusbar.showMessage(f"Rejected CSV selected", 2000)
+
+    def select_outdir(self):
+        folder = QFileDialog.getExistingDirectory(self, "Select output directory", "")
+        if folder:
+            self._out_dir = folder
+            self.statusbar.showMessage(f"Output folder set", 2000)
+
+    def start_training_clicked(self):
+        # Ensure paths exist
+        confirmed = getattr(self, '_confirmed_csv', None)
+        rejected = getattr(self, '_rejected_csv', None)
+        outdir = getattr(self, '_out_dir', None)
+        if not confirmed or not rejected:
+            QMessageBox.warning(self, "Missing files", "Please select both confirmed and rejected CSV files before training.")
+            return
+        # Emit signal to backend
+        self.start_training_signal.emit(confirmed, rejected, outdir or '')
+        self.statusbar.showMessage("Training started in background", 2000)
     
     def add_batch_info(self, batch_info: dict):
         item_text = f"Batch {batch_info['batch_id']}.  Length {batch_info['batch_length']}  Confirmed {batch_info['confirmed']}  Rejected {batch_info['rejected']}"
@@ -514,7 +594,11 @@ class MainWindow(QMainWindow):
         self.enable_button_selection()
         
     def remover_archivo(self):
-        """Elimina el archivo seleccionado de la lista"""
+        """Remove the selected batch entry from the list and notify backend.
+
+        This method updates the UI list widget and emits `remove_batch_signal`
+        with the removed batch id so the backend can free related resources.
+        """
         items_seleccionados = self.lista_archivos.selectedItems()
         if not items_seleccionados:
             return
@@ -528,7 +612,10 @@ class MainWindow(QMainWindow):
         self.clear_table_view()
     
     def limpiar_archivos(self):
-        """Limpia todos los archivos de la lista"""
+        """Clear all loaded batches after user confirmation.
+
+        Emits `clear_batches_signal` so the backend can reset session state.
+        """
         reply = QMessageBox.question(
             self,
             "Confirmar",
@@ -547,7 +634,7 @@ class MainWindow(QMainWindow):
             self.clear_table_view()
     
     def clear_table_view(self):
-        """Limpia la vista de tabla y resetea controles"""
+        """Clear the current table view and reset pagination/UI state."""
         self.table_exoplanets.setRowCount(0)
         self.table_exoplanets.setColumnCount(0)
         self.label_data_viewer.setText("Exoplanet Data (Select a batch above):")
@@ -565,10 +652,11 @@ class MainWindow(QMainWindow):
         self.save_to_database_signal.emit(item.data(Qt.UserRole))
         
     def start_prediction(self):
-        """Start prediction for selected batch or all batches.
+        """Start prediction for the selected batch or for all loaded batches.
 
-        Emits `start_prediction_signal(batch_id)` for each batch to predict.
-        If no batch is selected, asks user whether to predict all loaded batches.
+        Emits `start_prediction_signal(batch_id)` for each batch to predict. If
+        no batch is selected the user is asked whether to run predictions on
+        all loaded batches.
         """
         items_seleccionados = self.lista_archivos.selectedItems()
         if items_seleccionados:
@@ -600,6 +688,42 @@ class MainWindow(QMainWindow):
                 self.start_prediction_signal.emit(batch_id)
             self.statusbar.showMessage("Prediction started for all loaded batches", 2000)
 
+    def load_model_clicked(self):
+        """Open a file dialog to choose a model (joblib). Ask whether to assign to selected batch or all."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select model file",
+            "",
+            "Joblib files (*.joblib);;All files (*.*)"
+        )
+
+        if not file_path:
+            return
+
+        # If a batch is selected, offer to assign to selected batch or all
+        items = self.lista_archivos.selectedItems()
+        if items:
+            item = items[0]
+            batch_id = item.data(Qt.UserRole)
+            reply = QMessageBox.question(
+                self,
+                "Assign model",
+                f"Assign selected model to Batch {batch_id}?\nChoose No to set as default for all batches.",
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+                QMessageBox.Yes
+            )
+
+            if reply == QMessageBox.Cancel:
+                return
+            if reply == QMessageBox.Yes:
+                self.load_model_signal.emit(file_path, batch_id)
+            else:
+                # set as default for all
+                self.load_model_signal.emit(file_path, -1)
+        else:
+            # no selection -> set as default for all batches
+            self.load_model_signal.emit(file_path, -1)
+
     def show_msg(self, tipo, mensaje):
         if tipo == "success":
             QMessageBox.information(self, "Success!", mensaje)
@@ -611,18 +735,25 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Information", mensaje)
     
     def enable_button_selection(self):
-        """Habilita el botón de predicción si hay un archivo seleccionado"""
+        """Enable or disable UI buttons depending on the current selection state.
+
+        This keeps the Start Prediction / Save to DB / Load Model buttons in sync
+        with the user's selection and available batches.
+        """
         if self.lista_archivos.selectedItems():
             self.btn_start_prediction.setEnabled(True)
             self.btn_save_to_db.setEnabled(True)
+            self.btn_load_model.setEnabled(True)
         else:
             self.btn_start_prediction.setEnabled(False)
+            # enable load model if there are any batches
+            self.btn_load_model.setEnabled(self.lista_archivos.count() > 0)
         if self.lista_archivos.count() == 0:
             self.btn_clear.setEnabled(False)
             self.btn_remove.setEnabled(False)
     
     def on_batch_selected(self):
-        """Se ejecuta cuando se selecciona un batch"""
+        """Called when a batch is selected in the list; request its data from backend."""
         items_seleccionados = self.lista_archivos.selectedItems()
         if items_seleccionados:
             batch_id = items_seleccionados[0].data(Qt.UserRole)
@@ -631,7 +762,8 @@ class MainWindow(QMainWindow):
     def on_prediction_progress(self, batch_id: int, status: str, message: str):
         """Handle backend prediction progress updates.
 
-        status is one of: 'started', 'completed', 'error'.
+        status is one of: 'started', 'completed', 'error'. The method updates
+        UI text and enables/disables controls appropriately.
         """
         # Find the list item for this batch
         item = None
@@ -664,7 +796,12 @@ class MainWindow(QMainWindow):
                 self.btn_save_to_db.setEnabled(True)
     
     def display_batch_data(self, dataframe: pd.DataFrame, batch_id: int):
-        """Muestra los datos del batch en la tabla con paginación"""
+        """Display a batch DataFrame in the table widget with pagination.
+
+        Accepts an empty DataFrame which will clear the table and show a friendly
+        message. The method keeps the full DataFrame in memory and renders the
+        current page into the QTableWidget.
+        """
         if dataframe is None or dataframe.empty:
             self.clear_table_view()
             self.label_data_viewer.setText(f"Batch {batch_id}: No data available")
@@ -686,7 +823,7 @@ class MainWindow(QMainWindow):
         self.load_current_page()
     
     def load_current_page(self):
-        """Carga la página actual de datos"""
+        """Render the current page of the active batch into the table widget."""
         if self.current_dataframe is None:
             return
         
@@ -760,17 +897,20 @@ class MainWindow(QMainWindow):
     # ========== MÉTODOS NUEVOS (PESTAÑA DATOS) ==========
     
     def refresh_database(self):
-        """Solicita actualización de la base de datos"""
+        """Request the backend to refresh the chosen database table and update UI."""
         db_type = "confirmed" if self.combo_db_selector.currentText() == "Confirmed Exoplanets" else "rejected"
         self.request_database_signal.emit(db_type)
         self.statusbar.showMessage("Refreshing database...", 1000)
     
     def on_database_changed(self):
-        """Se ejecuta cuando se cambia el selector de base de datos"""
+        """Called when the database selector changes; triggers a refresh."""
         self.refresh_database()
     
     def display_database_data(self, dataframe: pd.DataFrame, db_type: str):
-        """Muestra los datos de la base de datos"""
+        """Render database DataFrame into the database table view.
+
+        Handles the empty case and initializes sorting/search controls.
+        """
         if dataframe is None or dataframe.empty:
             self.database_dataframe = None
             self.filtered_dataframe = None
@@ -800,7 +940,10 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Loaded {len(dataframe)} records from {db_type} database", 2000)
     
     def sort_database(self, order: Qt.SortOrder):
-        """Ordena la base de datos por la columna seleccionada usando un thread"""
+        """Sort the currently displayed database page using a background thread.
+
+        Uses `DatabaseSortThread` to avoid blocking the UI when sorting large tables.
+        """
         if self.filtered_dataframe is None or self.combo_sort_column.currentText() == "":
             return
         
@@ -823,7 +966,7 @@ class MainWindow(QMainWindow):
         self.sort_thread.start()
     
     def on_sort_completed(self, sorted_dataframe):
-        """Callback cuando el ordenamiento termina"""
+        """Callback invoked when sorting completes; update UI and controls."""
         self.filtered_dataframe = sorted_dataframe
         self.current_db_page = 0
         self.load_current_db_page()
@@ -836,13 +979,17 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Sorted by {self.current_sort_column} ({order_text})", 2000)
     
     def on_search_text_changed(self):
-        """Se ejecuta cuando cambia el texto de búsqueda - usa debounce"""
+        """Called when the search input changes; debounces and schedules a search."""
         # Detener el timer anterior y reiniciarlo
         self.search_timer.stop()
         self.search_timer.start(500)  # Espera 500ms después de que el usuario deje de escribir
     
     def perform_search(self):
-        """Ejecuta la búsqueda en un thread"""
+        """Perform the search/filter operation in a background thread.
+
+        The function preserves responsiveness by re-scheduling searches if a
+        previous search is still running.
+        """
         search_text = self.search_input.text().strip()
         
         if self.database_dataframe is None:
@@ -880,7 +1027,7 @@ class MainWindow(QMainWindow):
         self.search_thread.start()
     
     def on_search_completed(self, result_dataframe):
-        """Callback cuando la búsqueda termina"""
+        """Callback invoked when a search thread completes; update UI with results."""
         self.filtered_dataframe = result_dataframe
         self.current_db_page = 0
         self.load_current_db_page()
@@ -900,7 +1047,7 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(f"Showing all {len(self.filtered_dataframe)} records", 2000)
     
     def disable_database_controls(self, disable):
-        """Habilita/deshabilita controles durante procesamiento (solo para sort)"""
+        """Enable/disable database controls while background processing is running."""
         self.combo_db_selector.setEnabled(not disable)
         self.btn_refresh_db.setEnabled(not disable)
         self.combo_sort_column.setEnabled(not disable)
@@ -911,7 +1058,7 @@ class MainWindow(QMainWindow):
         # self.btn_clear_search.setEnabled(not disable)
     
     def clear_search(self):
-        """Limpia la búsqueda"""
+        """Clear the search input and trigger a refresh via the debounce timer."""
         self.search_input.clear()
         # El timer se encargará de ejecutar perform_search
     

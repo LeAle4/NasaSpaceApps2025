@@ -138,5 +138,10 @@ def run_pipeline(
 if __name__ == '__main__':
 	# Lightweight smoke-run: don't compute expensive permutation by default
 	#run_pipeline(feature_csv="data/feat_raw.csv", label_csv="data/labels_raw.csv", model_out="raw.joblib", viz_out="vizraw", compute_permutation=True, random_state=RANDOM_STATE)
-	run_pipeline(feature_csv="data/non_candidates_features37.csv", label_csv="data/non_candidates_labels37.csv", model_out="noncand37.joblib", viz_out="viznoncand37", compute_permutation=True, random_state=RANDOM_STATE)
-	run_pipeline(feature_csv="data/non_candidates_features25.csv", label_csv="data/non_candidates_labels25.csv", model_out="noncand25.joblib", viz_out="viznoncand25", compute_permutation=True, random_state=RANDOM_STATE)
+	#run_pipeline(feature_csv="data/non_candidates_features37.csv", label_csv="data/non_candidates_labels37.csv", model_out="noncand37.joblib", viz_out="viznoncand37", compute_permutation=True, random_state=RANDOM_STATE)
+	#run_pipeline(feature_csv="data/non_candidates_features25.csv", label_csv="data/non_candidates_labels25.csv", model_out="noncand25.joblib", viz_out="viznoncand25", compute_permutation=True, random_state=RANDOM_STATE)
+	from model import Model
+	mymodel = Model.load("noncand37.joblib")
+	test_data = pd.read_csv("data/candidates_features37.csv")
+	predictions = mymodel.predict(test_data)
+	print(predictions)

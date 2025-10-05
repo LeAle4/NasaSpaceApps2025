@@ -16,6 +16,8 @@ class HopeFinderApp:
         # Conexiones originales (pestaña Modelo)
         self.frontend.load_csv_signal.connect(self.backend.newPredictionBatch)
         self.frontend.start_prediction_signal.connect(self.backend.startPrediction)
+        # connect model loading UI to backend handler
+        self.frontend.load_model_signal.connect(self.backend.setModelForBatch)
         self.backend.prediction_progress_signal.connect(self.frontend.on_prediction_progress)
         self.backend.popup_msg_signal.connect(self.frontend.show_msg)
         self.backend.batch_info_signal.connect(self.frontend.add_batch_info)
