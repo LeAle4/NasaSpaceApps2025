@@ -137,4 +137,19 @@ def run_pipeline(
 
 if __name__ == '__main__':
 	# Lightweight smoke-run: don't compute expensive permutation by default
-	run_pipeline(feature_csv=FEATURE_PATH, label_csv=LABEL_PATH, model_out=MODELOUT, viz_out=VIZOUT, compute_permutation=True, random_state=RANDOM_STATE)
+	#run_pipeline(feature_csv="data/feat_raw.csv", label_csv="data/labels_raw.csv", model_out="raw.joblib", viz_out="vizraw", compute_permutation=True, random_state=RANDOM_STATE)
+	#run_pipeline(feature_csv="data/non_candidates_features37.csv", label_csv="data/non_candidates_labels37.csv", model_out="noncand37.joblib", viz_out="viznoncand37", compute_permutation=True, random_state=RANDOM_STATE)
+	#run_pipeline(feature_csv="data/non_candidates_features25.csv", label_csv="data/non_candidates_labels25.csv", model_out="noncand25.joblib", viz_out="viznoncand25", compute_permutation=True, random_state=RANDOM_STATE)
+	import dataio
+	from cleaning import pipeline_full_cleaning_and_balancing
+	df_result = dataio.loadcsvfile("data/koi_exoplanets.csv")
+	if not isinstance(df_result, tuple) or len(df_result) < 2:
+		raise RuntimeError("dataio.loadcsvfile returned unexpected value")
+	data_df, status, msg = df_result
+	if status != 1 or data_df is None:
+		raise RuntimeError(f"Failed to load CSV: {msg}")
+
+	X_balanced_df, Y_balanced_df, preprocessor, corrGraph = pipeline_full_cleaning_and_balancing(data_df)
+	X_balanced_df.to_csv("shi1.csv", index=False)
+	Y_balanced_df.to_csv("shi2.csv", index=False)
+	corrGraph.save("shi3.png")
