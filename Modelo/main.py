@@ -125,15 +125,21 @@ def train_save_model(X, y, output_path: str, params: Optional[dict] = None):
     labels = [str(x) for x in np.unique(np.concatenate([y_test, y_pred]))]
 
     progress.stage("visualization", "Creating and saving visualizations")
-    # Save confusion matrix figure
-    ax = visualization.plot_confusion_matrix(cm, labels=labels)
-    ax.figure.savefig(str(VIZOUT + "/confusion_matrix.png"))
+    # Save confusion matrix figure (visualization functions return Graph)
+    g = visualization.plot_confusion_matrix(cm, labels=labels)
+    try:
+        g.save(str(VIZOUT + "/confusion_matrix.png"))
+    except Exception:
+        g.get_figure().savefig(str(VIZOUT + "/confusion_matrix.png"))
 
     # Compute cross-validation scores for additional diagnostics and save plot
     progress.step("Computing cross-validation scores")
     scores = visualization.compute_cv_scores(clf, X, y, cv=10)
-    ax = visualization.plot_cv_scores(scores)
-    ax.figure.savefig(str(VIZOUT + "/cv_scores.png"))
+    g = visualization.plot_cv_scores(scores)
+    try:
+        g.save(str(VIZOUT + "/cv_scores.png"))
+    except Exception:
+        g.get_figure().savefig(str(VIZOUT + "/cv_scores.png"))
 
     # Plot ROC AUC: prefer probability scores or decision function values
     progress.step("Preparing scores for ROC/PR plotting")
@@ -159,21 +165,33 @@ def train_save_model(X, y, output_path: str, params: Optional[dict] = None):
         sample_vals = str(type(y_score))
     progress.step(f"y_score sample={sample_vals}")
 
-    ax = visualization.plot_roc_auc(y_test, y_score)
-    ax.figure.savefig(str(VIZOUT + "/roc_auc.png"))
+    g = visualization.plot_roc_auc(y_test, y_score)
+    try:
+        g.save(str(VIZOUT + "/roc_auc.png"))
+    except Exception:
+        g.get_figure().savefig(str(VIZOUT + "/roc_auc.png"))
 
     # PR curve (use same y_score selection as above)
-    ax = visualization.plot_pr_auc(y_test, y_score)
-    ax.figure.savefig(str(VIZOUT + "/pr_auc.png"))
+    g = visualization.plot_pr_auc(y_test, y_score)
+    try:
+        g.save(str(VIZOUT + "/pr_auc.png"))
+    except Exception:
+        g.get_figure().savefig(str(VIZOUT + "/pr_auc.png"))
 
     # Plot true positives vs other predictions and save
-    ax = visualization.plot_truepositives_vs_others(y_test, y_pred)
-    ax.figure.savefig(str(VIZOUT + "/tp_vs_others.png"))
+    g = visualization.plot_truepositives_vs_others(y_test, y_pred)
+    try:
+        g.save(str(VIZOUT + "/tp_vs_others.png"))
+    except Exception:
+        g.get_figure().savefig(str(VIZOUT + "/tp_vs_others.png"))
 
     progress.step("Saving train/test accuracy plot")
     # Visualize train vs test accuracy and save
-    ax = visualization.plot_train_test_accuracy(float(train_acc), float(test_acc))
-    ax.figure.savefig(str(VIZOUT + "/train_test_accuracy.png"))
+    g = visualization.plot_train_test_accuracy(float(train_acc), float(test_acc))
+    try:
+        g.save(str(VIZOUT + "/train_test_accuracy.png"))
+    except Exception:
+        g.get_figure().savefig(str(VIZOUT + "/train_test_accuracy.png"))
 
     progress.stage("persistence", "Saving trained model to disk")
     # Persist trained model to disk and inform the user
