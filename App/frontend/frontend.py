@@ -7,6 +7,7 @@ from PyQt5.QtGui import *
 import pandas as pd
 import os
 from backend.analysis import dataio
+import time
 
 
 class DataLoaderThread(QThread):
@@ -717,8 +718,24 @@ class MainWindow(QMainWindow):
         
         QtCore.QMetaObject.connectSlotsByName(self)
         
-        # Cargar base de datos inicial
+
+        loading_img = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'LoadingScreen.png')
+        splash_pixmap = QPixmap(loading_img)
+        splash = QSplashScreen(splash_pixmap, Qt.WindowStaysOnTopHint)
+        splash.show()
+
+        # Process events to ensure splash screen is displayed
+        QApplication.processEvents()
+
+        # Perform loading operations
         self.refresh_database()
+
+        # Show main window and close splash screen after a short delay
+        QtCore.QTimer.singleShot(1, lambda: self._show_and_finish_splash(splash))
+        
+    def _show_and_finish_splash(self, splash):
+        splash.finish(self)
+        self.show()
     
     def setup_window_properties(self):
         """Configura las propiedades de la ventana: posición, tamaño y redimensionamiento"""
@@ -1742,5 +1759,4 @@ if __name__ == "__main__":
     import sys
     app = QtWidgets.QApplication(sys.argv)
     mainwindow = MainWindow()
-    mainwindow.show()
     sys.exit(app.exec_())
