@@ -320,7 +320,9 @@ class MainWindow(QMainWindow):
         self.labelTrain = QLabel("Training: configure training datasets and start training")
         self.labelTrain.setFont(QFont("Arial", 10, QFont.Bold))
         self.trainLayout.addWidget(self.labelTrain)
-        # --- Training dataset upload controls ---
+    # --- Training dataset upload controls ---
+    # Small UI to select a single input table (CSV/TSV/VOTable/IPAC)
+    # and then load it for preview or training.
         self.train_controls_frame = QFrame()
         self.train_controls_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.train_controls_frame.setLineWidth(2)
@@ -347,13 +349,15 @@ class MainWindow(QMainWindow):
 
         self.trainLayout.addWidget(self.train_controls_frame)
 
-        # Preview table for the uploaded dataset (with pagination)
+    # Preview table for the uploaded dataset (with pagination)
+    # The preview uses paging to avoid rendering very large tables at once.
+    # Table widgets provide built-in scrollbars so large rows/columns are navigable.
         self.dataset_preview_frame = QFrame()
         self.dataset_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.dataset_preview_frame.setLineWidth(2)
         self.dataset_preview_layout = QVBoxLayout(self.dataset_preview_frame)
 
-        # Header + pagination controls for dataset preview
+    # Header + pagination controls for dataset preview (page-size navigation)
         self.dataset_header_layout = QHBoxLayout()
         self.label_dataset_preview = QLabel("Dataset preview:")
         self.dataset_header_layout.addWidget(self.label_dataset_preview)
@@ -394,6 +398,7 @@ class MainWindow(QMainWindow):
         self.dataset_pagination_layout.addWidget(self.btn_dataset_last)
 
         self.dataset_header_layout.addWidget(self.dataset_pagination_widget)
+        # Hidden by default; becomes visible when dataset has multiple pages
         self.dataset_pagination_widget.setVisible(False)
 
         self.dataset_preview_layout.addLayout(self.dataset_header_layout)
@@ -405,7 +410,8 @@ class MainWindow(QMainWindow):
         self.dataset_preview_layout.addWidget(self.table_dataset_preview)
         self.trainLayout.addWidget(self.dataset_preview_frame)
 
-        # dataset paging state
+        # dataset paging state (keeps the full DataFrame in memory and renders
+        # only the current page to the table widget)
         self._dataset_df = None
         self._dataset_current_page = 0
         self._dataset_rows_per_page = 500
@@ -662,6 +668,7 @@ class MainWindow(QMainWindow):
 
     # === Dataset upload handlers for Train tab ===
     def select_dataset_file(self):
+        # Ask user for a dataset file path (supports multiple table formats)
         file_path, _ = QFileDialog.getOpenFileName(self, "Select dataset CSV", "", "CSV Files (*.csv);;All files (*)")
         if not file_path:
             return
@@ -683,7 +690,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No file", "No dataset selected. Use 'Select Dataset' first.")
             return
 
-        # Use dataio loader which returns (df, status, errmsg)
+    # Choose the appropriate loader in analysis.dataio based on extension.
         ext = os.path.splitext(path)[1].lower()
         try:
             if ext == '.csv':
@@ -705,16 +712,16 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", f"Failed to load dataset:\n{msg}")
             return
 
-        # Keep a reference for later training
+        # store DataFrame and show first page
         self._dataset_df = df
         self.statusbar.showMessage(f"Dataset loaded: {len(df)} rows", 2000)
         self.display_dataset_preview(df)
 
     def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
-        """Display the dataset using paging into the preview table.
+        """Store the dataset and render page 0 into the preview table.
 
-        The preview will show the first page and enable pagination controls if
-        the dataset exceeds the page size.
+        We keep the full DataFrame in memory (`self._dataset_df`) and only
+        render the current page to the QTableWidget for responsiveness.
         """
         if dataframe is None or dataframe.empty:
             self._dataset_df = None
@@ -738,7 +745,7 @@ class MainWindow(QMainWindow):
         self.load_current_dataset_page()
 
     def load_current_dataset_page(self):
-        """Render the current page of the dataset preview into the table widget."""
+        """Render current dataset page into the QTableWidget and update nav state."""
         if self._dataset_df is None or self._dataset_df.empty:
             return
 
@@ -779,15 +786,18 @@ class MainWindow(QMainWindow):
         self.dataset_pagination_widget.setVisible(total_pages > 1)
 
     def go_to_first_dataset_page(self):
+        """Jump to first page and render it."""
         self._dataset_current_page = 0
         self.load_current_dataset_page()
 
     def go_to_prev_dataset_page(self):
+        """Go one page back if possible."""
         if self._dataset_current_page > 0:
             self._dataset_current_page -= 1
             self.load_current_dataset_page()
 
     def go_to_next_dataset_page(self):
+        """Advance one page if not on the last page."""
         if self._dataset_df is not None:
             total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
             if self._dataset_current_page < total_pages - 1:
@@ -795,6 +805,7 @@ class MainWindow(QMainWindow):
                 self.load_current_dataset_page()
 
     def go_to_last_dataset_page(self):
+        """Jump to the last page and render it."""
         if self._dataset_df is not None:
             total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
             self._dataset_current_page = total_pages - 1
