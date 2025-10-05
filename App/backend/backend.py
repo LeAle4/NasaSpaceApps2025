@@ -6,7 +6,8 @@ from . import parameters as p
 class CurrentSesion(QObject):
     popup_msg_signal = pyqtSignal(str, str)
     batch_info_signal = pyqtSignal(dict)
-    batch_data_signal = pyqtSignal(pd.DataFrame, int)  # Nueva señal para enviar datos del batch
+    batch_data_signal = pyqtSignal(pd.DataFrame, int)  # Señal para enviar datos del batch
+    database_data_signal = pyqtSignal(pd.DataFrame, str)  # Nueva señal para enviar datos de la DB
     
     def __init__(self):
         super().__init__()
@@ -43,7 +44,7 @@ class CurrentSesion(QObject):
         self.database = database
     
     def addBatchToDatabase(self, batch_id: int):
-        # Agrega un batch a la a la base de datos.
+        # Agrega un batch a la base de datos.
         result = self.database.addBatchToDatabase(self.currentBatches[batch_id])
         self.popup_msg_signal.emit(result[0], result[1])
     
@@ -56,6 +57,14 @@ class CurrentSesion(QObject):
             else:
                 # Enviar DataFrame vacío si no hay datos
                 self.batch_data_signal.emit(pd.DataFrame(), batch_id)
+    
+    def getDatabaseData(self, db_type: str):
+        """Envía los datos de la base de datos solicitada al frontend"""
+        if self.database:
+            if db_type == "confirmed":
+                self.database_data_signal.emit(self.database.allConfirmedExoplanets, "confirmed")
+            elif db_type == "rejected":
+                self.database_data_signal.emit(self.database.allRejectedExoplanets, "rejected")
 
 class PredictionBatch():
     _id_counter = 0
@@ -97,7 +106,7 @@ class PredictionBatch():
             return ["error", f"Error loading CSV: {e}"]
     
     def predictBatch(self):
-        #Este metodo es ejecutado despues de cargar los datos. Ejecuta el modelo de predicción de exoplanetas y devuelve su veredicto.
+        #Este método es ejecutado después de cargar los datos. Ejecuta el modelo de predicción de exoplanetas y devuelve su veredicto.
         #Retorna: exoplanetas confirmados, exoplanetas rechazados.
         if self.batchDataFrame is None:
             print("Error: No hay datos cargados. Ejecuta readCsvData() primero.")
@@ -183,4 +192,3 @@ class Database():
 if __name__ == '__main__':
     prediction_batch = PredictionBatch()
     prediction_batch.readCsvData(r"C:\Users\ADMIN\Desktop\Vicente\Sistemas coheteria\NasaSpaceApps\code\NasaSpaceApps2025\Modelo\koi_exoplanets.csv")
-    
