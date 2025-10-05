@@ -130,7 +130,7 @@ class MainWindow(QMainWindow):
     save_to_database_signal = pyqtSignal(int)
     request_batch_data_signal = pyqtSignal(int)
     request_database_signal = pyqtSignal(str)  # Nueva señal para solicitar datos de la DB
-    start_training_signal = pyqtSignal(str, str, str)  # confirmed_csv, rejected_csv, out_dir
+    start_training_signal = pyqtSignal(str, str, str, dict)  # confirmed_csv, rejected_csv, out_dir, params
     
     def __init__(self):
         super().__init__()
@@ -328,7 +328,7 @@ class MainWindow(QMainWindow):
         self.train_controls_frame.setLineWidth(2)
         self.train_controls_layout = QHBoxLayout(self.train_controls_frame)
 
-        # Features and Labels selectors (split dataset)
+    # Features and Labels selectors (split dataset)
         # Features selector
         self.label_features = QLabel("Features CSV:")
         self.train_controls_layout.addWidget(self.label_features)
@@ -362,6 +362,19 @@ class MainWindow(QMainWindow):
         self.btn_load_labels.clicked.connect(self.load_labels_clicked)
         self.btn_load_labels.setEnabled(False)
         self.train_controls_layout.addWidget(self.btn_load_labels)
+
+        self.train_controls_layout.addStretch()
+
+        # Outdir selector + start button (features/labels based training)
+        self.btn_select_outdir = QPushButton('Select Output Dir')
+        self.btn_select_outdir.clicked.connect(self.select_outdir)
+        self.train_controls_layout.addWidget(self.btn_select_outdir)
+
+        self.btn_start_training = QPushButton('Start Training')
+        self.btn_start_training.clicked.connect(self.start_training_clicked)
+        # disabled until features and labels are loaded
+        self.btn_start_training.setEnabled(False)
+        self.train_controls_layout.addWidget(self.btn_start_training)
 
         self.train_controls_layout.addStretch()
 
@@ -726,17 +739,9 @@ class MainWindow(QMainWindow):
             return None
 
     # ===== Training-related UI handlers =====
-    def select_confirmed_csv(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select confirmed CSV", "", "CSV Files (*.csv);;All files (*)")
-        if file_path:
-            self._confirmed_csv = file_path
-            self.statusbar.showMessage(f"Confirmed CSV selected", 2000)
-
-    def select_rejected_csv(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select rejected CSV", "", "CSV Files (*.csv);;All files (*)")
-        if file_path:
-            self._rejected_csv = file_path
-            self.statusbar.showMessage(f"Rejected CSV selected", 2000)
+    # Note: confirmed/rejected CSV selectors removed. Training uses loaded
+    # features and labels tables from the UI. Ensure both are loaded to enable
+    # the Start Training button.
 
     # New: Features / Labels file selection and loading
     def select_features_file(self):
@@ -786,6 +791,9 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Features loaded: {len(df)} rows", 2000)
         # Use existing dataset preview for features
         self.display_dataset_preview(df)
+        # enable start if labels already loaded
+        if getattr(self, '_labels_df', None) is not None:
+            self.btn_start_training.setEnabled(True)
 
     def load_labels_clicked(self):
         path = getattr(self, '_labels_path', None)
@@ -815,6 +823,9 @@ class MainWindow(QMainWindow):
         self._labels_df = df
         self.statusbar.showMessage(f"Labels loaded: {len(df)} rows", 2000)
         self.display_labels_preview(df)
+        # enable start if features already loaded
+        if getattr(self, '_features_df', None) is not None:
+            self.btn_start_training.setEnabled(True)
 
     def display_labels_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
         if dataframe is None or dataframe.empty:
@@ -841,15 +852,52 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(f"Output folder set", 2000)
 
     def start_training_clicked(self):
-        # Ensure paths exist
-        confirmed = getattr(self, '_confirmed_csv', None)
-        rejected = getattr(self, '_rejected_csv', None)
+        # Training will use the loaded features and labels tables. We split
+        # the features into confirmed/rejected CSVs based on labels and pass
+        # their paths to the backend training API.
+        X = getattr(self, '_features_df', None)
+        y_df = getattr(self, '_labels_df', None)
         outdir = getattr(self, '_out_dir', None)
-        if not confirmed or not rejected:
-            QMessageBox.warning(self, "Missing files", "Please select both confirmed and rejected CSV files before training.")
+
+        if X is None or y_df is None:
+            QMessageBox.warning(self, "Missing data", "Please load both features and labels before training.")
             return
-        # Emit signal to backend
-        self.start_training_signal.emit(confirmed, rejected, outdir or '')
+
+        # resolve labels series
+        if y_df.shape[1] == 1:
+            y = y_df.iloc[:, 0].squeeze()
+        elif 'koi_disposition' in y_df.columns:
+            y = y_df['koi_disposition'].squeeze()
+        else:
+            y = y_df.iloc[:, 0].squeeze()
+
+        if len(y) != len(X):
+            QMessageBox.warning(self, "Mismatched sizes", "Features and labels must have the same number of rows.")
+            return
+
+        # Split into confirmed/rejected based on label values (1 / 0)
+        try:
+            mask_conf = (y == 1)
+        except Exception:
+            mask_conf = (y.astype(int) == 1)
+
+        X_conf = X[mask_conf].copy()
+        X_rej = X[~mask_conf].copy()
+
+        # Determine output directory for temporary CSVs
+        if outdir and os.path.isdir(outdir):
+            tmp_dir = outdir
+        else:
+            import tempfile
+            tmp_dir = tempfile.mkdtemp(prefix='hf_train_')
+
+        confirmed_path = os.path.join(tmp_dir, 'confirmed_train.csv')
+        rejected_path = os.path.join(tmp_dir, 'rejected_train.csv')
+        X_conf.to_csv(confirmed_path, index=False)
+        X_rej.to_csv(rejected_path, index=False)
+
+        params = self.get_rf_params()
+        self.start_training_signal.emit(confirmed_path, rejected_path, tmp_dir, params)
         self.statusbar.showMessage("Training started in background", 2000)
 
     def get_rf_params(self):
@@ -1576,6 +1624,47 @@ class MainWindow(QMainWindow):
             total_pages = (len(self.filtered_dataframe) + self.rows_per_page - 1) // self.rows_per_page
             self.current_db_page = total_pages - 1
             self.load_current_db_page()
+
+    # === Graphs window ===
+    def open_graphs_window(self, image_paths: list):
+        """Open a simple window that displays a list of image paths.
+
+        The window will show thumbnails and allow clicking to open full-size.
+        """
+        if not image_paths:
+            QMessageBox.information(self, "No graphs", "No graphs were produced.")
+            return
+
+        gw = QWidget()
+        gw.setWindowTitle('Training visualizations')
+        layout = QVBoxLayout(gw)
+        scroll = QScrollArea()
+        container = QWidget()
+        v = QVBoxLayout(container)
+
+        for p in image_paths:
+            if not os.path.exists(p):
+                continue
+            lbl = QLabel(os.path.basename(p))
+            pix = QPixmap(p)
+            if pix.isNull():
+                continue
+            # scale down thumbnail
+            thumb = pix.scaledToWidth(600)
+            img_label = QLabel()
+            img_label.setPixmap(thumb)
+            img_label.setToolTip(p)
+            v.addWidget(lbl)
+            v.addWidget(img_label)
+
+        container.setLayout(v)
+        scroll.setWidget(container)
+        scroll.setWidgetResizable(True)
+        layout.addWidget(scroll)
+        gw.resize(800, 600)
+        gw.show()
+        # keep reference to avoid garbage collection
+        self._graphs_window = gw
 
 
 if __name__ == "__main__":
