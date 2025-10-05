@@ -1,15 +1,38 @@
 import pandas as pd
-import parameters as p
 import os
+from PyQt5.QtCore import pyqtSignal, QObject
+from . import parameters as p
 
-class CurrentSesion():
+class CurrentSesion(QObject):
+    popup_msg_signal = pyqtSignal(str, str)
+    batch_info_signal = pyqtSignal(dict)
+    
     def __init__(self):
+        super().__init__()
         self.currentBatches = dict()
         self.database = None
     
     def newPredictionBatch(self, path):
         new_batch = PredictionBatch()
         self.currentBatches[new_batch.id] = new_batch
+        notification = new_batch.readCsvData(path)
+        self.popup_msg_signal.emit(notification[0], notification[1])
+        if notification[0] == "success":
+            self.batch_info_signal.emit({
+                "batch_id": new_batch.id,
+                "batch_length": new_batch.batch_length,
+                "confirmed": new_batch.confirmedExoplanets,
+                "rejected": new_batch.rejectedExoplanets
+            })
+    
+    def clearBatches(self):
+        self.currentBatches.clear()
+        PredictionBatch._id_counter = 0 
+    
+    def removeBatch(self, batch_id: int):
+        if batch_id in self.currentBatches:
+            del self.currentBatches[batch_id]
+            PredictionBatch._id_counter -= 1 
     
     def init_database(self):
         # Inicializa la base de datos.
@@ -25,10 +48,11 @@ class PredictionBatch():
     _id_counter = 0
     def __init__(self):
         PredictionBatch._id_counter += 1
-        self.id = PredictionBatch.id_counter 
+        self.id = PredictionBatch._id_counter
+        self.batch_length = 0
         self.batchDataFrame = None
-        self.confirmedExoplanets = None
-        self.rejectedExoplanets = None
+        self.confirmedExoplanets = 0
+        self.rejectedExoplanets = 0
         
     
     def readCsvData(self, path: str):
@@ -37,7 +61,7 @@ class PredictionBatch():
         if not os.path.exists(path):
             print(f"Error: File not found at {path}")
             self.batchDataFrame = None
-            return False
+            return ["error", f"Error: File not found at {path}"]
             
         try:
             datafile = pd.read_csv(path, usecols=p.DATA_HEADERS)
@@ -46,21 +70,25 @@ class PredictionBatch():
             if cols == len(p.DATA_HEADERS):
                 print(f"Se han cargado {rows} potenciales exoplanetas")
                 self.batchDataFrame = datafile
-                return True
+                return ["success", f"Se han cargado {rows} potenciales exoplanetas"]
             else:
                 print(f"Error: no se han encontrado los datos necesarios en el archivo csv. {cols}/{p.DATA_HEADERS} cargados")
+                
                 self.batchDataFrame = None
-                return False
+                return ["error", f"Error: no se han encontrado los datos necesarios en el archivo csv. {cols}/{p.DATA_HEADERS} cargados"]
                 
         except Exception as e:
             print(f"Error loading CSV: {e}")
             self.batchDataFrame = None
-            return False
+            return ["error", f"Error loading CSV: {e}"]
     
     def predictBatch(self):
         #Este metodo es ejecutado despues de cargar los datos. Ejecuta el modelo de predicción de exoplanetas y devuelve su veredicto.
         #Retorna: exoplanetas confirmados, exoplanetas rechazados.
-        pass
+        if self.batchDataFrame is None:
+            print("Error: No hay datos cargados. Ejecuta readCsvData() primero.")
+            return ["error", "Error: No hay datos cargados. Ejecuta readCsvData() primero."]
+        
         
         
         
