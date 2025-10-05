@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
     # frontend will emit the chosen save-path for the model back to backend
     model_save_path_chosen = pyqtSignal(str)
     
+    
     def __init__(self):
         super().__init__()
         self.current_dataframe = None
@@ -160,6 +161,8 @@ class MainWindow(QMainWindow):
         
         # Store orbit visualization windows
         self.orbit_windows = []
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logo.png')
+        self.setWindowIcon(QIcon(icon_path))
         
         self.setupUi()
         
