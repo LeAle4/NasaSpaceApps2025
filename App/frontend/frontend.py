@@ -134,6 +134,7 @@ class MainWindow(QMainWindow):
     # frontend will emit the chosen save-path for the model back to backend
     model_save_path_chosen = pyqtSignal(str)
     
+    
     def __init__(self):
         super().__init__()
         self.current_dataframe = None
@@ -161,11 +162,11 @@ class MainWindow(QMainWindow):
         # Store orbit visualization windows
         self.orbit_windows = []
         
+        self.setup_window_properties()
         self.setupUi()
         
     def setupUi(self):
         self.setObjectName("HopeFinder")
-        self.resize(800, 600)
         
         # Widget central
         self.centralwidget = QWidget(self)
@@ -360,7 +361,7 @@ class MainWindow(QMainWindow):
         self.train_controls_frame.setLineWidth(2)
         self.train_controls_layout = QHBoxLayout(self.train_controls_frame)
 
-    # Features and Labels selectors (split dataset)
+        # Features and Labels selectors (split dataset)
         # Features selector
         self.label_features = QLabel("Features CSV:")
         self.train_controls_layout.addWidget(self.label_features)
@@ -409,19 +410,6 @@ class MainWindow(QMainWindow):
         self.train_controls_layout.addWidget(self.btn_start_training)
 
         self.train_controls_layout.addStretch()
-
-        # Outdir selector + start button (features/labels based training)
-        self.btn_select_outdir = QPushButton('Select Output Dir')
-        self.btn_select_outdir.clicked.connect(self.select_outdir)
-        self.train_controls_layout.addWidget(self.btn_select_outdir)
-
-        self.btn_start_training = QPushButton('Start Training')
-        self.btn_start_training.clicked.connect(self.start_training_clicked)
-        # disabled until features and labels are loaded
-        self.btn_start_training.setEnabled(False)
-        self.train_controls_layout.addWidget(self.btn_start_training)
-
-        self.train_controls_layout.addStretch()
         self.trainLayout.addWidget(self.train_controls_frame)
 
         # Random Forest parameters
@@ -447,7 +435,7 @@ class MainWindow(QMainWindow):
         self.rf_params_layout.addWidget(self.label_max_depth)
         self.spin_max_depth = QSpinBox()
         self.spin_max_depth.setRange(-1, 1000)
-        self.spin_max_depth.setValue(0)
+        self.spin_max_depth.setValue(100)
         self.spin_max_depth.setToolTip("Maximum depth (0 means None)")
         self.spin_max_depth.setMinimumWidth(80)
         self.rf_params_layout.addWidget(self.spin_max_depth)
@@ -458,7 +446,7 @@ class MainWindow(QMainWindow):
         self.rf_params_layout.addWidget(self.label_random_state)
         self.spin_random_state = QSpinBox()
         self.spin_random_state.setRange(-1, 999999)
-        self.spin_random_state.setValue(-1)
+        self.spin_random_state.setValue(42)
         self.spin_random_state.setToolTip("Random seed (-1 means None)")
         self.spin_random_state.setMinimumWidth(80)
         self.rf_params_layout.addWidget(self.spin_random_state)
@@ -469,7 +457,7 @@ class MainWindow(QMainWindow):
         self.rf_params_layout.addWidget(self.label_n_jobs)
         self.spin_n_jobs = QSpinBox()
         self.spin_n_jobs.setRange(-1, 64)
-        self.spin_n_jobs.setValue(1)
+        self.spin_n_jobs.setValue(-1)
         self.spin_n_jobs.setToolTip("Parallel jobs (-1 use all cores)")
         self.spin_n_jobs.setMinimumWidth(80)
         self.rf_params_layout.addWidget(self.spin_n_jobs)
@@ -563,7 +551,9 @@ class MainWindow(QMainWindow):
         self.tabWidget.addTab(self.tabTrain, "Train")
 
         # Rename 'Model' tab to 'Evaluation'
-        self.tabWidget.addTab(self.tabModelos, "Evaluation")
+        self.tabWidget.addTab(self.tabModelos, "Model Prediction")
+        
+        self.tabWidget.addTab(self.tabTrain, "Model Training")
         
         # ========== PESTAÑA DE DATOS (DATABASE) ==========
         self.tabDatos = QWidget()
@@ -713,7 +703,7 @@ class MainWindow(QMainWindow):
         self.datosLayout.addWidget(self.db_viewer_frame)
         
         # Rename 'Data' tab to 'Visualize'
-        self.tabWidget.addTab(self.tabDatos, "Visualize")
+        self.tabWidget.addTab(self.tabDatos, "DataBase View")
         
         # Agregar el TabWidget al layout principal
         self.mainLayout.addWidget(self.tabWidget)
@@ -729,6 +719,33 @@ class MainWindow(QMainWindow):
         
         # Cargar base de datos inicial
         self.refresh_database()
+    
+    def setup_window_properties(self):
+        """Configura las propiedades de la ventana: posición, tamaño y redimensionamiento"""
+        
+        # Obtener las dimensiones de la pantalla
+        screen_geometry = QApplication.primaryScreen().availableGeometry()
+        screen_width = screen_geometry.width()
+        screen_height = screen_geometry.height()
+        
+        # Definir el tamaño de la ventana (80% del tamaño de la pantalla)
+        window_width = int(screen_width * 0.9)
+        window_height = int(screen_height * 0.9)
+        
+        # Calcular la posición para centrar la ventana
+        x_pos = (screen_width - window_width) // 2
+        y_pos = (screen_height - window_height) // 2
+        
+        # Establecer geometría: (x, y, width, height)
+        self.setGeometry(x_pos, y_pos, window_width, window_height)
+        
+        # Permitir redimensionamiento
+        self.setMinimumSize(800, 600) 
+        # self.setMaximumSize(1600, 1200) # Opcional
+        self.setWindowTitle("Spes Nova Finder")
+        icon_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logo.png')
+        self.setWindowIcon(QIcon(icon_path))
+        self.setWindowTitle("Spes Nova Finder")
 
     # === Save-model dialog handler ===
     def on_request_model_save(self, suggested_path: str):
@@ -754,11 +771,11 @@ class MainWindow(QMainWindow):
     def on_exoplanet_row_selected(self):
         """Enable orbit visualization button when a row is selected in the table."""
         selected_items = self.table_exoplanets.selectedItems()
-        self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.current_dataframe is not None)
+        self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.visualization_dataframe is not None)
     
     def open_orbit_visualization(self):
         """Open a new window with the orbit visualization for the selected exoplanet."""
-        if self.current_dataframe is None:
+        if self.visualization_dataframe is None:
             QMessageBox.warning(self, "No Data", "No exoplanet data loaded.")
             return
         
@@ -773,7 +790,7 @@ class MainWindow(QMainWindow):
         # Calculate the actual DataFrame row index considering pagination
         actual_row_index = self.current_page * self.rows_per_page + view_row_index
         
-        if actual_row_index >= len(self.current_dataframe):
+        if actual_row_index >= len(self.visualization_dataframe):
             QMessageBox.warning(self, "Invalid Selection", "Selected row is out of range.")
             return
         
@@ -793,12 +810,12 @@ class MainWindow(QMainWindow):
             
             # Create orbit visualization as a child widget
             # Pass parent=central_widget and run_app=False to embed it
-            sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
-              'koi_smass':1.0,'koi_srad':1.0,'koi_prad':1.00,'koi_sma':0.2734,
-              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
-            df_sample = pd.DataFrame([sample])
+            #sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
+              #'koi_smass':1.0,'koi_srad':1.0,'koi_prad':1.00,'koi_sma':0.2734,
+              #'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
+            #df_sample = pd.DataFrame([sample])
             orbit_ctx = orbit.create_child_widget(
-                df=df_sample,
+                df=self.visualization_dataframe,
                 row_index=0,
                 speed=5.0,
                 show_solar_system=True,
@@ -834,7 +851,7 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
-    # ========== MÉTODOS ORIGINALES (PESTAÑA MODELO) ==========
+    # ========== MÉTODOS ORIGINALES (PESTAÑA MODEL PREDICTION) ==========
     
     def open_csv_batch(self):
         """Open a file dialog to select a CSV batch and perform basic validation."""
@@ -1362,7 +1379,7 @@ class MainWindow(QMainWindow):
                 self.btn_start_prediction.setEnabled(True)
                 self.btn_save_to_db.setEnabled(True)
     
-    def display_batch_data(self, dataframe: pd.DataFrame, batch_id: int):
+    def display_batch_data(self, dataframe: pd.DataFrame, vis_dataframe: pd.DataFrame, batch_id: int):
         """Display a batch DataFrame in the table widget with pagination."""
         if dataframe is None or dataframe.empty:
             self.clear_table_view()
@@ -1371,6 +1388,7 @@ class MainWindow(QMainWindow):
         
         # Guardar referencia al dataframe completo
         self.current_dataframe = dataframe
+        self.visualization_dataframe = vis_dataframe
         self.current_batch_id = batch_id
         self.current_page = 0
         
