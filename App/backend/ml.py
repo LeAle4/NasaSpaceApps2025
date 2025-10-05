@@ -191,4 +191,6 @@ def train_from_database(
         'message': f"Training complete. Saved {len(saved_paths)} visualization(s)",
         'saved_paths': saved_paths,
         'metrics': metrics,
+        # include the trained wrapper so callers (UI/backend) can offer to persist it
+        'model_wrapper': results.get('wrapper'),
     }

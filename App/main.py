@@ -35,6 +35,9 @@ class HopeFinderApp:
         # Training connections
         self.frontend.start_training_signal.connect(self.backend.startTraining)
         self.backend.training_finished_signal.connect(lambda result: self.frontend.open_graphs_window(result.get('saved_paths', [])))
+        # When backend asks for a save path, show dialog in frontend and send chosen path back
+        self.backend.request_model_save_signal.connect(self.frontend.on_request_model_save)
+        self.frontend.model_save_path_chosen.connect(lambda path: self.backend.model_save_path_signal.emit(path))
     
     def run(self):
         self.frontend.show()

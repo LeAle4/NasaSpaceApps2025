@@ -131,6 +131,8 @@ class MainWindow(QMainWindow):
     request_batch_data_signal = pyqtSignal(int)
     request_database_signal = pyqtSignal(str)  # Nueva señal para solicitar datos de la DB
     start_training_signal = pyqtSignal(str, str, str, dict)  # confirmed_csv, rejected_csv, out_dir, params
+    # frontend will emit the chosen save-path for the model back to backend
+    model_save_path_chosen = pyqtSignal(str)
     
     def __init__(self):
         super().__init__()
@@ -690,6 +692,25 @@ class MainWindow(QMainWindow):
         
         # Cargar base de datos inicial
         self.refresh_database()
+
+    # === Save-model dialog handler ===
+    def on_request_model_save(self, suggested_path: str):
+        """Show a Save File dialog asking where to persist the trained model.
+
+        When the user selects a path, emit `model_save_path_chosen` with the
+        absolute path so the backend can persist the model.
+        """
+        try:
+            path, _ = QFileDialog.getSaveFileName(self, "Save trained model as", suggested_path or "model.joblib", "Joblib files (*.joblib);;All files (*.*)")
+            if not path:
+                # user cancelled - emit empty string to indicate cancel
+                self.model_save_path_chosen.emit("")
+                return
+            # emit absolute path
+            abs_path = os.path.abspath(path)
+            self.model_save_path_chosen.emit(abs_path)
+        except Exception as e:
+            QMessageBox.critical(self, "Save error", f"Failed to open save dialog: {e}")
 
     # ========== MÉTODOS ORIGINALES (PESTAÑA MODELO) ==========
     
