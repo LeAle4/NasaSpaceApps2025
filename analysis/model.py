@@ -22,8 +22,8 @@ import visualization
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance as _perm
-from sklearn.model_selection import train_test_split, StratifiedKFold, cross_val_score
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, precision_score, recall_score, f1_score
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix
 
 # Progress helpers: print timestamped stage/step messages
 import progress
@@ -74,6 +74,18 @@ class Model:
         return self
 
     def predict(self, X):
+        """Return predicted class labels for X.
+
+        Parameters
+        ----------
+        X : array-like
+            Samples to predict.
+
+        Returns
+        -------
+        array-like
+            Predicted labels produced by the underlying estimator.
+        """
         return self.model.predict(X)
 
     def predict_proba(self, X):
@@ -82,12 +94,43 @@ class Model:
         raise AttributeError("Underlying estimator has no 'predict_proba' method")
 
     def decision_function(self, X):
-        if hasattr(self.model, "decision_function"):
-            return self.model.decision_function(X)
+        """Call the underlying estimator's decision_function if available.
+
+        Many scikit-learn estimators provide `decision_function` for scoring
+        (e.g., SVMs). If the wrapped estimator doesn't implement it this
+        method raises AttributeError to make the absence explicit.
+        """
+        df = getattr(self.model, "decision_function", None)
+        if callable(df):
+            return df(X)
         raise AttributeError("Underlying estimator has no 'decision_function' method")
 
     def score(self, X, y):
+        """Return the default estimator score on the given test data and labels.
+
+        This delegates to the underlying estimator's `score` method which
+        commonly returns accuracy for classifiers.
+        """
         return self.model.score(X, y)
+
+    def get_scores(self, X):
+        """Return the best available score representation for plotting:
+        prefer predict_proba -> decision_function -> raw predictions.
+        This centralizes the logic used multiple times in the module.
+        """
+        if hasattr(self.model, "predict_proba"):
+            try:
+                return self.model.predict_proba(X)
+            except Exception:
+                pass
+        df = getattr(self.model, "decision_function", None)
+        if callable(df):
+            try:
+                return df(X)
+            except Exception:
+                pass
+        # Fallback: return hard labels
+        return self.model.predict(X)
 
     # Persistence -----------------------------------------------------
     def save(self, path: str):
@@ -168,47 +211,62 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
         dict containing keys: wrapper, clf, X_train, X_test, y_train, y_test,
         y_pred, cm, train_acc, test_acc, labels, y_score
     """
+    # Parameters (brief):
+    # - X, y: feature matrix and label vector (pandas or numpy)
+    # - params: parameters forwarded to RandomForestClassifier (e.g. n_estimators)
+    # - random_state: integer seed used for splitting and model initialization
+    # - test_size: fraction of data to reserve for testing
     params = params or {}
 
     progress.stage("training", "Starting model training")
-    progress.step(f"RandomForest params: {params}")
+    # Show params at higher verbosity as structured details
+    progress.step("RandomForest initialization", verbosity=2, details={"params": params})
 
     # Create Model wrapper and perform stratified train/test split
     wrapper = Model(params=params, random_state=random_state)
 
-    progress.step("Splitting data into train and test sets")
-    # Respect caller-provided random_state; fall back to a sane default
+    # Resolve random state used for splitting and logging
     rs = 42 if random_state is None else random_state
+    progress.step("Splitting data into train and test sets", verbosity=1, details={"test_size": test_size, "random_state": rs})
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=rs, stratify=y
     )
+    # Report resulting split shapes and label distribution at verbose level
+    try:
+        y_train_dist = dict(zip(*np.unique(y_train, return_counts=True)))
+    except Exception:
+        y_train_dist = None
+    progress.step("Train/test split complete", verbosity=2, details={"X_train_shape": getattr(X_train, 'shape', None), "X_test_shape": getattr(X_test, 'shape', None), "y_train_distribution": y_train_dist})
 
-    progress.step("Fitting RandomForest on training data")
+    progress.step("Fitting RandomForest on training data", verbosity=1)
     wrapper.fit(X_train, y_train)
     clf = wrapper.model
+    # After training, report model summary and OOB (if present) at verbose level
+    try:
+        model_oob = getattr(clf, 'oob_score_', None)
+    except Exception:
+        model_oob = None
+    progress.step("Model fitted", verbosity=2, details={"oob_score": model_oob, "n_estimators": wrapper.get_params().get('n_estimators')})
 
-    progress.step("Predicting on test set and computing metrics")
+    progress.step("Predicting on test set and computing metrics", verbosity=1)
     y_pred = clf.predict(X_test)
     cm = confusion_matrix(y_test, y_pred)
     test_acc = accuracy_score(y_test, y_pred)
     train_acc = accuracy_score(y_train, clf.predict(X_train))
 
-    # Labels for plotting
+    # Labels for plotting: unique values present in true/pred
     labels = [str(x) for x in np.unique(np.concatenate([y_test, y_pred]))]
 
-    # Prepare y_score (prefer probabilities or decision function if available)
-    if hasattr(clf, "predict_proba"):
-        try:
-            y_score = clf.predict_proba(X_test)
-        except Exception:
-            y_score = y_pred
-    elif hasattr(clf, "decision_function"):
-        try:
-            y_score = clf.decision_function(X_test)
-        except Exception:
-            y_score = y_pred
-    else:
-        y_score = y_pred
+    # Score object used by ROC/PR plotting (probabilities or decision scores)
+    y_score = wrapper.get_scores(X_test)
+    # Provide a brief preview of the score object at verbose level
+    try:
+        score_shape = np.asarray(y_score).shape
+        score_dtype = str(np.asarray(y_score).dtype)
+    except Exception:
+        score_shape = None
+        score_dtype = None
+    progress.step("Prepared score object for ROC/PR plotting", verbosity=2, details={"score_shape": score_shape, "score_dtype": score_dtype})
 
     results = {
         'wrapper': wrapper,
@@ -228,7 +286,7 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
     progress.step("Training complete; returning results")
     return results
 
-def create_visualizations(results: dict):
+def create_visualizations(results: dict, random_state: Optional[int] = None):
     """Given training results, create visualization Graph objects and return them.
 
     This function builds the standard diagnostic plots using the
@@ -247,47 +305,61 @@ def create_visualizations(results: dict):
     y_score = results['y_score']
 
     progress.stage("visualization", "Creating visualization Graph objects")
+    progress.step("Preparing combined data for visualizations", verbosity=2, details={"X_shape": getattr(X, 'shape', None), "y_shape": getattr(y, 'shape', None)})
 
     graphs = {}
 
-    # Confusion matrix (visualization functions already return Graph)
-    g = visualization.plot_confusion_matrix(cm, labels=labels)
-    graphs['confusion_matrix'] = g
+    # Confusion matrix
+    graphs['confusion_matrix'] = visualization.plot_confusion_matrix(cm, labels=labels)
 
-    # Compute cross-validation scores for diagnostics
-    progress.step("Computing cross-validation scores")
+    # Cross-validation scores (simple diagnostic)
+    progress.step("Computing cross-validation scores", verbosity=1, details={"cv": 10})
     scores = visualization.compute_cv_scores(clf, X, y, cv=10)
-    g = visualization.plot_cv_scores(scores)
-    graphs['cv_scores'] = g
+    graphs['cv_scores'] = visualization.plot_cv_scores(scores)
 
-    progress.step(f"y_score preview: shape={np.asarray(y_score).shape}, dtype={np.asarray(y_score).dtype}")
+    # K-fold detailed per-metric results and plot
     try:
-        sample_vals = np.asarray(y_score)[:8]
-    except Exception:
-        sample_vals = str(type(y_score))
-    progress.step(f"y_score sample={sample_vals}")
+        progress.step("Computing per-fold metrics (k-fold)", verbosity=1)
+        from metrics import ten_fold_cross_validation
+        rs_k = 42 if random_state is None else random_state
+        kfold_results = ten_fold_cross_validation(clf, X, y, n_splits=10, random_state=rs_k)
+        kf_graph, _ = visualization.plotkfold_results(kfold_results)
+        graphs['kfold_results'] = kf_graph
+        # Summarize k-fold means at verbose level
+        try:
+            kf_summary = {k: float(np.mean(v)) for k, v in kfold_results.items()}
+        except Exception:
+            kf_summary = None
+        progress.step("K-fold metrics computed", verbosity=2, details={"kfold_summary": kf_summary})
+    except Exception as e:
+        progress.step(f"Skipping k-fold detailed plot: {e}", verbosity=1)
 
-    # ROC AUC
-    g = visualization.plot_roc_auc(y_test, y_score)
-    graphs['roc_auc'] = g
+    # ROC and PR curves
+    progress.step("Creating ROC AUC plot", verbosity=1)
+    graphs['roc_auc'] = visualization.plot_roc_auc(y_test, y_score)
+    progress.step("Creating Precision-Recall plot", verbosity=1)
+    graphs['pr_auc'] = visualization.plot_pr_auc(y_test, y_score)
 
-    # PR curve
-    g = visualization.plot_pr_auc(y_test, y_score)
-    graphs['pr_auc'] = g
+    # True positives vs others and train/test accuracy
+    progress.step("Creating true-positives vs others plot", verbosity=1)
+    graphs['tp_vs_others'] = visualization.plot_truepositives_vs_others(y_test, y_pred)
+    progress.step("Creating train/test accuracy plot", verbosity=1, details={"train_acc": float(train_acc), "test_acc": float(test_acc)})
+    graphs['train_test_accuracy'] = visualization.plot_train_test_accuracy(float(train_acc), float(test_acc))
 
-    # True positives vs others
-    g = visualization.plot_truepositives_vs_others(y_test, y_pred)
-    graphs['tp_vs_others'] = g
-
-    # Train vs test accuracy
-    progress.step("Creating train/test accuracy plot")
-    g = visualization.plot_train_test_accuracy(float(train_acc), float(test_acc))
-    graphs['train_test_accuracy'] = g
+    # Permutation importances (quick mode) - keep optional and non-fatal
+    try:
+        progress.step("Computing permutation importances (quick)", verbosity=1, details={"n_repeats": 10, "n_features": getattr(results['X_test'], 'shape', (None, None))[1] if hasattr(results['X_test'], 'shape') else None})
+        perm_res = wrapper.permutation_importance(results['X_test'], results['y_test'], n_repeats=10, random_state=random_state)
+        perm_mean = getattr(perm_res, 'importances_mean', None)
+        if perm_mean is not None:
+            graphs['permutation_importance'] = visualization.plot_permutation_importance(perm_mean, results['X_test'].columns, top_n=30)
+    except Exception as e:
+        progress.step(f"Skipping permutation importance plot: {e}", verbosity=1)
 
     return graphs
 
 
-def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, compute_permutation: bool = False, random_state: Optional[int] = None):
+def compute_metrics(clf, X_train, X_test, y_train, y_test, compute_permutation: bool = False, random_state: Optional[int] = None):
     """Compute a comprehensive set of evaluation metrics and save them to disk.
 
     This helper prefers the project's `metrics.evaluate_model` function when
@@ -306,87 +378,80 @@ def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, compute_perm
         dict of metrics
     """
     progress.stage("evaluation", "Computing aggregated evaluation metrics")
+    progress.step("Starting metrics aggregation", verbosity=1)
 
-    # Try to use project's evaluate_model if present
+    # Prefer project-level evaluate_model if available (keeps output consistent)
     try:
         from metrics import evaluate_model
-        metrics = evaluate_model(clf, X_train, X_test, y_train, y_test, compute_permutation=compute_permutation)
+        progress.step("Using project evaluate_model implementation", verbosity=2)
+        return evaluate_model(clf, X_train, X_test, y_train, y_test, compute_permutation=compute_permutation)
     except Exception:
-        # Fallback: compute a set of common metrics using sklearn
-        from sklearn.metrics import accuracy_score, balanced_accuracy_score, log_loss, brier_score_loss
-        from sklearn.metrics import cohen_kappa_score
-        try:
-            from sklearn.metrics import matthews_corrcoef as mcc
-        except Exception:
-            def mcc(y_true, y_pred):
-                try:
-                    from sklearn.metrics import matthews_corrcoef as _mcc
-                    return _mcc(y_true, y_pred)
-                except Exception:
-                    return None
+        progress.step("Project evaluate_model not available; using fallback sklearn-based metrics", verbosity=1)
+        pass
 
-        y_pred_test = clf.predict(X_test)
-        y_pred_train = clf.predict(X_train)
+    # Fallback: core metrics computed with sklearn (kept concise)
+    from sklearn.metrics import balanced_accuracy_score, log_loss, brier_score_loss, cohen_kappa_score
+    try:
+        from sklearn.metrics import matthews_corrcoef as _mcc
+    except Exception:
+        _mcc = None
 
-        metrics = {}
-        try:
-            metrics['accuracy'] = float(accuracy_score(y_test, y_pred_test))
-            metrics['train_accuracy'] = float(accuracy_score(y_train, y_pred_train))
-        except Exception:
-            pass
+    y_pred_test = clf.predict(X_test)
+    y_pred_train = clf.predict(X_train)
 
-        try:
-            metrics['balanced_accuracy'] = float(balanced_accuracy_score(y_test, y_pred_test))
-        except Exception:
-            metrics['balanced_accuracy'] = None
+    metrics = {
+        'accuracy': float(accuracy_score(y_test, y_pred_test)),
+        'train_accuracy': float(accuracy_score(y_train, y_pred_train)),
+        'balanced_accuracy': float(balanced_accuracy_score(y_test, y_pred_test)) if len(np.unique(y_test)) > 1 else None,
+    }
 
-        # Probabilistic metrics if available
+    # Probabilistic metrics when available
+    if hasattr(clf, 'predict_proba'):
         try:
-            if hasattr(clf, 'predict_proba'):
-                proba = clf.predict_proba(X_test)
-                # if binary or multiclass, compute log_loss where sensible
-                metrics['log_loss'] = float(log_loss(y_test, proba))
-                # brier score only for binary; attempt and fallback
-                try:
-                    metrics['brier_score'] = float(brier_score_loss(y_test, proba[:, 1]))
-                except Exception:
-                    metrics['brier_score'] = None
-            else:
-                metrics['log_loss'] = None
+            proba = clf.predict_proba(X_test)
+            metrics['log_loss'] = float(log_loss(y_test, proba))
+            # brier for binary problems only
+            try:
+                metrics['brier_score'] = float(brier_score_loss(y_test, proba[:, 1]))
+            except Exception:
                 metrics['brier_score'] = None
         except Exception:
             metrics['log_loss'] = None
             metrics['brier_score'] = None
+    else:
+        metrics['log_loss'] = None
+        metrics['brier_score'] = None
 
+    metrics['cohen_kappa'] = float(cohen_kappa_score(y_test, y_pred_test)) if len(np.unique(y_test)) > 1 else None
+    if _mcc is not None:
         try:
-            metrics['cohen_kappa'] = float(cohen_kappa_score(y_test, y_pred_test))
-        except Exception:
-            metrics['cohen_kappa'] = None
-
-        try:
-            metrics['mcc'] = float(mcc(y_test, y_pred_test))
+            metrics['mcc'] = float(_mcc(y_test, y_pred_test))
         except Exception:
             metrics['mcc'] = None
+    else:
+        metrics['mcc'] = None
 
-        # Add confusion matrix and classification report for completeness
+    # Confusion matrix and classification report
+    try:
+        from sklearn.metrics import confusion_matrix, classification_report
+        metrics['confusion_matrix'] = confusion_matrix(y_test, y_pred_test).tolist()
+        metrics['classification_report'] = classification_report(y_test, y_pred_test, output_dict=True)
+    except Exception:
+        pass
+
+    # Optional permutation importances (may be slow) - convert numpy -> list for JSON
+    if compute_permutation:
         try:
-            from sklearn.metrics import confusion_matrix, classification_report
-            metrics['confusion_matrix'] = confusion_matrix(y_test, y_pred_test).tolist()
-            metrics['classification_report'] = classification_report(y_test, y_pred_test, output_dict=True)
+            rs = 42 if random_state is None else random_state
+            progress.step("Computing permutation importances for metrics", verbosity=2, details={"n_repeats": 30})
+            perm = _perm(clf, X_test, y_test, n_repeats=30, random_state=rs)
+            imp_mean = getattr(perm, 'importances_mean', None)
+            imp_std = getattr(perm, 'importances_std', None)
+            metrics['permutation_importances'] = {
+                'importances_mean': imp_mean.tolist() if imp_mean is not None else None,
+                'importances_std': imp_std.tolist() if imp_std is not None else None,
+            }
         except Exception:
-            pass
-
-        # Optionally compute permutation importances (may be slow)
-        if compute_permutation:
-            try:
-                from sklearn.inspection import permutation_importance as _perm
-                rs = 42 if random_state is None else random_state
-                perm = _perm(clf, X_test, y_test, n_repeats=30, random_state=rs)
-                metrics['permutation_importances'] = {
-                    'importances_mean': perm.importances_mean.tolist(),
-                    'importances_std': perm.importances_std.tolist(),
-                }
-            except Exception:
-                metrics['permutation_importances'] = None
+            metrics['permutation_importances'] = None
 
     return metrics
