@@ -15,7 +15,7 @@ class CurrentSesion(QObject):
     popup_msg_signal = pyqtSignal(str, str)
     batch_info_signal = pyqtSignal(dict)
     prediction_progress_signal = pyqtSignal(int, str, str)  # batch_id, status, message
-    batch_data_signal = pyqtSignal(pd.DataFrame, int)  # Signal to send batch data to frontend
+    batch_data_signal = pyqtSignal(pd.DataFrame, pd.DataFrame, int)  # Signal to send batch data to frontend
     database_data_signal = pyqtSignal(pd.DataFrame, str)  # Signal to send DB data to frontend
     training_finished_signal = pyqtSignal(dict)  # emit dict with training result
     # Ask the frontend to show a Save File dialog. Payload: suggested_filename (str)
@@ -273,10 +273,10 @@ class CurrentSesion(QObject):
         if batch_id in self.currentBatches:
             batch = self.currentBatches[batch_id]
             if batch.batchDataFrame is not None:
-                self.batch_data_signal.emit(batch.batchDataFrame, batch_id)
+                self.batch_data_signal.emit(batch.batchDataFrame, batch.visualizationDataFrame, batch_id)
             else:
                 # Send empty DataFrame if no data is available
-                self.batch_data_signal.emit(pd.DataFrame(), batch_id)
+                self.batch_data_signal.emit(pd.DataFrame(), pd.DataFrame(), batch_id)
     
     def getDatabaseData(self, db_type: str):
         """Send a copy of the requested database table to the frontend.
@@ -337,6 +337,7 @@ class PredictionBatch():
         self.id = PredictionBatch._id_counter
         self.batch_length = 0
         self.batchDataFrame = None
+        self.visualizationDataFrame = None
         self.confirmedExoplanets = pd.DataFrame()
         self.rejectedExoplanets = pd.DataFrame()
         
@@ -351,6 +352,7 @@ class PredictionBatch():
             
         try:
             datafile = pd.read_csv(path, usecols=p.DATA_HEADERS)
+            visualData = pd.read_csv(path, usecols=p.DATA_VISUALIZATION)
             rows, cols = datafile.shape
             self.batch_length = rows
 
@@ -358,6 +360,7 @@ class PredictionBatch():
                 # Successful load: set DataFrame and report success
                 print(f"Loaded {rows} potential exoplanet candidates")
                 self.batchDataFrame = datafile
+                self.visualizationDataFrame = visualData
                 return ["success", f"Loaded {rows} potential exoplanet candidates"]
             else:
                 # Column mismatch: provide a helpful diagnostic message

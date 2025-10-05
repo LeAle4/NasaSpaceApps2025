@@ -741,8 +741,8 @@ class MainWindow(QMainWindow):
         screen_height = screen_geometry.height()
         
         # Definir el tamaño de la ventana (80% del tamaño de la pantalla)
-        window_width = int(screen_width * 0.8)
-        window_height = int(screen_height * 0.8)
+        window_width = int(screen_width * 0.9)
+        window_height = int(screen_height * 0.9)
         
         # Calcular la posición para centrar la ventana
         x_pos = (screen_width - window_width) // 2
@@ -783,11 +783,11 @@ class MainWindow(QMainWindow):
     def on_exoplanet_row_selected(self):
         """Enable orbit visualization button when a row is selected in the table."""
         selected_items = self.table_exoplanets.selectedItems()
-        self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.current_dataframe is not None)
+        self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.visualization_dataframe is not None)
     
     def open_orbit_visualization(self):
         """Open a new window with the orbit visualization for the selected exoplanet."""
-        if self.current_dataframe is None:
+        if self.visualization_dataframe is None:
             QMessageBox.warning(self, "No Data", "No exoplanet data loaded.")
             return
         
@@ -802,7 +802,7 @@ class MainWindow(QMainWindow):
         # Calculate the actual DataFrame row index considering pagination
         actual_row_index = self.current_page * self.rows_per_page + view_row_index
         
-        if actual_row_index >= len(self.current_dataframe):
+        if actual_row_index >= len(self.visualization_dataframe):
             QMessageBox.warning(self, "Invalid Selection", "Selected row is out of range.")
             return
         
@@ -822,12 +822,12 @@ class MainWindow(QMainWindow):
             
             # Create orbit visualization as a child widget
             # Pass parent=central_widget and run_app=False to embed it
-            sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
-              'koi_smass':1.0,'koi_srad':1.0,'koi_prad':1.00,'koi_sma':0.2734,
-              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
-            df_sample = pd.DataFrame([sample])
+            #sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
+              #'koi_smass':1.0,'koi_srad':1.0,'koi_prad':1.00,'koi_sma':0.2734,
+              #'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
+            #df_sample = pd.DataFrame([sample])
             orbit_ctx = orbit.create_child_widget(
-                df=df_sample,
+                df=self.visualization_dataframe,
                 row_index=0,
                 speed=5.0,
                 show_solar_system=True,
@@ -1391,7 +1391,7 @@ class MainWindow(QMainWindow):
                 self.btn_start_prediction.setEnabled(True)
                 self.btn_save_to_db.setEnabled(True)
     
-    def display_batch_data(self, dataframe: pd.DataFrame, batch_id: int):
+    def display_batch_data(self, dataframe: pd.DataFrame, vis_dataframe: pd.DataFrame, batch_id: int):
         """Display a batch DataFrame in the table widget with pagination."""
         if dataframe is None or dataframe.empty:
             self.clear_table_view()
@@ -1400,6 +1400,7 @@ class MainWindow(QMainWindow):
         
         # Guardar referencia al dataframe completo
         self.current_dataframe = dataframe
+        self.visualization_dataframe = vis_dataframe
         self.current_batch_id = batch_id
         self.current_page = 0
         
