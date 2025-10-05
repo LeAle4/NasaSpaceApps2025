@@ -141,3 +141,24 @@
 [2025-10-05 01:49:40]   - RandomForest params: {'n_estimators': 100, 'n_jobs': -1}
 [2025-10-05 01:49:40]   - Splitting data into train and test sets
 [2025-10-05 01:49:40]   - Fitting RandomForest on training data
+[2025-10-05 01:49:42]   - Predicting on test set and computing metrics
+[2025-10-05 01:49:42]   - Training complete; returning results
+[2025-10-05 01:50:17] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 01:50:18]   - Computing cross-validation scores
+[2025-10-05 01:50:45]   - Computing per-fold metrics (k-fold)
+[2025-10-05 01:51:14]   - Creating train/test accuracy plot
+[2025-10-05 01:51:14]   - Computing permutation importances (quick)
+[2025-10-05 01:54:54] STAGE TRAINING: Starting model training
+[2025-10-05 01:54:54]   - RandomForest params: {'n_estimators': 100, 'n_jobs': -1}
+[2025-10-05 01:54:54]   - Splitting data into train and test sets
+[2025-10-05 01:54:54]   - Fitting RandomForest on training data
+[2025-10-05 01:54:56]   - Predicting on test set and computing metrics
+[2025-10-05 01:54:56]   - Training complete; returning results
+[2025-10-05 01:55:36] STAGE VISUALIZATION: Creating visualization Graph objects
+[2025-10-05 01:55:36]   - Computing cross-validation scores
+[2025-10-05 01:56:04]   - Computing per-fold metrics (k-fold)
+[2025-10-05 01:56:30]   - Creating train/test accuracy plot
+[2025-10-05 01:56:30]   - Computing permutation importances (quick)
+[2025-10-05 02:04:06] STAGE TRAINING: Starting model training
+[2025-10-05 02:04:06]   - RandomForest initialization
+[2025-10-05 02:04:06]       > params: {'n_estimators': 100, 'n_jobs': -1}

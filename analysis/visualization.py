@@ -16,10 +16,26 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.ticker import PercentFormatter
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import roc_curve, auc, roc_auc_score
 from sklearn.metrics import precision_recall_curve, average_precision_score
 from sklearn.preprocessing import label_binarize
+
+# Try seaborn styles if available, otherwise fall back to matplotlib default
+try:
+    plt.style.use('seaborn-darkgrid')
+except Exception:
+    try:
+        plt.style.use('seaborn')
+    except Exception:
+        # final fallback to matplotlib's default style
+        plt.style.use('default')
+_cycle = plt.rcParams.get('axes.prop_cycle')
+if _cycle is not None and hasattr(_cycle, 'by_key'):
+    DEFAULT_PALETTE = _cycle.by_key().get('color', ['C0', 'C1', 'C2'])
+else:
+    DEFAULT_PALETTE = ['C0', 'C1', 'C2']
 
 
 class Graph:
@@ -60,9 +76,9 @@ def plot_confusion_matrix(cm: np.ndarray, labels: Sequence[str], ax: Optional[pl
     """Heatmap-style confusion matrix with annotations."""
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 5))
-
     im = ax.imshow(cm, cmap='Blues', interpolation='nearest')
-    plt.colorbar(im, ax=ax)
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.ax.yaxis.set_major_formatter(PercentFormatter(xmax=cm.sum()))
     ticks = np.arange(len(labels))
     ax.set_xticks(ticks)
     ax.set_yticks(ticks)
@@ -71,12 +87,18 @@ def plot_confusion_matrix(cm: np.ndarray, labels: Sequence[str], ax: Optional[pl
     ax.set_xlabel('Predicted label')
     ax.set_ylabel('True label')
 
-    # annotate
+    # annotate with count and percentage
+    total = cm.sum() if cm.size else 1
     thresh = cm.max() / 2. if cm.size else 0
     for i in range(cm.shape[0]):
         for j in range(cm.shape[1]):
-            ax.text(j, i, int(cm[i, j]), ha='center', va='center',
-                    color='white' if cm[i, j] > thresh else 'black')
+            count = int(cm[i, j])
+            pct = count / total if total else 0.0
+            txt = f"{count}\n{pct:.1%}"
+            ax.text(j, i, txt, ha='center', va='center',
+                    color='white' if cm[i, j] > thresh else 'black', fontsize=9)
+
+    ax.set_title('Confusion matrix (counts and % of total)')
 
     return Graph.from_axes(ax)
 
@@ -86,9 +108,34 @@ def plot_cv_scores(scores, ax: Optional[plt.Axes] = None):
     scores = np.asarray(list(scores))
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 4))
-    ax.boxplot(scores, notch=True, patch_artist=True)
-    ax.scatter(np.ones_like(scores), scores, color='black', alpha=0.6)
+    # Boxplot with individual points jittered and mean annotation
+    bp = ax.boxplot(scores, notch=False, patch_artist=True, widths=0.4)
+    # style boxes if present (matplotlib returns artists when using patch_artist)
+    if 'boxes' in bp:
+        for patch in bp['boxes']:
+            if hasattr(patch, 'set_facecolor'):
+                try:
+                    patch.set_facecolor(DEFAULT_PALETTE[1])
+                except Exception:
+                    pass
+            if hasattr(patch, 'set_alpha'):
+                try:
+                    patch.set_alpha(0.6)
+                except Exception:
+                    pass
+    # jittered points
+    jitter = (np.random.rand(len(scores)) - 0.5) * 0.12
+    ax.scatter(np.ones_like(scores) + jitter, scores, color='black', alpha=0.75, s=20)
+    mean = float(np.mean(scores))
+    std = float(np.std(scores))
+    ax.plot([0.6, 1.4], [mean, mean], color='C3', linestyle='--', linewidth=1.5, label=f'mean={mean:.3f}')
+    ax.set_xticks([])
     ax.set_title('Cross-validation scores')
+    ax.legend()
+    ax.set_ylabel('Score')
+    ax.grid(axis='y', alpha=0.3)
+    # annotate mean/std
+    ax.text(1.02, mean, f"μ={mean:.3f}\nσ={std:.3f}", va='center', transform=ax.get_yaxis_transform(), fontsize=9)
     return Graph.from_axes(ax)
 
 
@@ -112,11 +159,18 @@ def plot_permutation_importance(importances, feature_names, top_n: int = 30, ax:
 
     if ax is None:
         # height proportional to number of bars
-        fig, ax = plt.subplots(figsize=(8, max(3, len(to_plot) * 0.25)))
+        fig, ax = plt.subplots(figsize=(8, max(3, len(to_plot) * 0.28)))
 
-    to_plot.plot(kind='barh', ax=ax, color='C1')
-    ax.set_xlabel('Importance')
+    idx = np.asarray(list(to_plot.index))
+    vals = np.asarray(to_plot.values)
+    bars = ax.barh(idx, vals, color=DEFAULT_PALETTE[1], alpha=0.85)
+    ax.set_xlabel('Permutation importance (higher = more important)')
     ax.set_title(f'Permutation importances (top {min(top_n, len(s))})')
+    ax.grid(axis='x', alpha=0.2)
+    # annotate numeric values at the end of each bar
+    for bar in bars:
+        w = bar.get_width()
+        ax.text(w + max(1e-6, 0.01 * w), bar.get_y() + bar.get_height() / 2, f"{w:.3f}", va='center', fontsize=8)
     return Graph.from_axes(ax)
 
 
@@ -125,8 +179,9 @@ def plot_truepositives_vs_others(y_true, y_pred, ax: Optional[plt.Axes] = None):
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
     labels = np.unique(np.concatenate([y_true, y_pred]))
-    tp = [(y_true == lab & (y_pred == lab)).sum() for lab in labels]
-    others = [(y_true == lab & (y_pred != lab)).sum() for lab in labels]
+    # ensure correct boolean precedence
+    tp = [int(((y_true == lab) & (y_pred == lab)).sum()) for lab in labels]
+    others = [int(((y_true == lab) & (y_pred != lab)).sum()) for lab in labels]
 
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 4))
@@ -138,6 +193,11 @@ def plot_truepositives_vs_others(y_true, y_pred, ax: Optional[plt.Axes] = None):
     ax.set_xticks(x)
     ax.set_xticklabels(labels, rotation=45)
     ax.legend()
+    ax.set_ylabel('Count')
+    # annotate counts above bars
+    for i in range(len(labels)):
+        ax.text(x[i] - width / 2, tp[i] + max(1, int(0.01 * sum(tp + others))), f"{tp[i]}", ha='center', va='bottom', fontsize=8)
+        ax.text(x[i] + width / 2, others[i] + max(1, int(0.01 * sum(tp + others))), f"{others[i]}", ha='center', va='bottom', fontsize=8)
     return Graph.from_axes(ax)
 
 
@@ -147,6 +207,10 @@ def plot_train_test_accuracy(train_acc: float, test_acc: float, ax: Optional[plt
         fig, ax = plt.subplots(figsize=(5, 4))
     ax.bar(['Train', 'Test'], [train_acc, test_acc], color=['tab:blue', 'tab:purple'])
     ax.set_ylim(0, 1)
+    # numeric labels
+    for i, v in enumerate([train_acc, test_acc]):
+        ax.text(i, v + 0.02, f"{v:.3f}", ha='center', va='bottom', fontsize=9)
+    ax.set_ylabel('Accuracy')
     return Graph.from_axes(ax)
 
 
@@ -171,20 +235,30 @@ def plot_roc_auc(y_true, y_score, ax: Optional[plt.Axes] = None, pos_label=1):
         else:
             score = y_score
         fpr, tpr, _ = roc_curve(y_true, score, pos_label=pos_label)
-        ax.plot(fpr, tpr, lw=2, label=f'ROC (AUC={roc_auc_score(y_true, score):.3f})')
+        auc_val = roc_auc_score(y_true, score)
+        ax.plot(fpr, tpr, lw=2, color=DEFAULT_PALETTE[0], label=f'ROC (AUC={auc_val:.3f})')
+        ax.set_title(f'ROC curve (AUC={auc_val:.3f})')
     else:
-        y_true_bin = label_binarize(y_true, classes=classes)
+        y_true_bin = np.asarray(label_binarize(y_true, classes=classes))
         if y_score.ndim == 1:
-            y_score_bin = label_binarize(y_score, classes=classes)
+            y_score_bin = np.asarray(label_binarize(y_score, classes=classes))
         else:
-            y_score_bin = y_score
+            y_score_bin = np.asarray(y_score)
+        aucs = []
         for i in range(n_classes):
             fpr, tpr, _ = roc_curve(y_true_bin[:, i], y_score_bin[:, i])
-            ax.plot(fpr, tpr, lw=1, alpha=0.7, label=f'Class {classes[i]}')
+            auc_i = auc(fpr, tpr)
+            aucs.append(auc_i)
+            ax.plot(fpr, tpr, lw=1.5, alpha=0.8, label=f'Class {classes[i]} (AUC={auc_i:.3f})')
+        mean_auc = float(np.mean(aucs)) if aucs else None
+        if mean_auc is not None:
+            ax.set_title(f'Multiclass ROC (mean AUC={mean_auc:.3f})')
     ax.plot([0, 1], [0, 1], '--', color='gray')
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.05)
     ax.legend(loc='lower right')
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
     return Graph.from_axes(ax)
 
 
@@ -205,19 +279,28 @@ def plot_pr_auc(y_true, y_score, ax: Optional[plt.Axes] = None, pos_label=1):
         else:
             score = y_score
         precision, recall, _ = precision_recall_curve(y_true, score, pos_label=pos_label)
-        ax.plot(recall, precision, lw=2, label=f'PR (AP={average_precision_score(y_true, score):.3f})')
+        ap = average_precision_score(y_true, score)
+        ax.plot(recall, precision, lw=2, color=DEFAULT_PALETTE[1], label=f'PR (AP={ap:.3f})')
+        ax.set_title(f'Precision-Recall (AP={ap:.3f})')
     else:
-        y_true_bin = label_binarize(y_true, classes=classes)
+        y_true_bin = np.asarray(label_binarize(y_true, classes=classes))
         if y_score.ndim == 1:
-            y_score_bin = label_binarize(y_score, classes=classes)
+            y_score_bin = np.asarray(label_binarize(y_score, classes=classes))
         else:
-            y_score_bin = y_score
+            y_score_bin = np.asarray(y_score)
+        aps = []
         for i in range(n_classes):
             prec, rec, _ = precision_recall_curve(y_true_bin[:, i], y_score_bin[:, i])
-            ax.plot(rec, prec, lw=1, alpha=0.7, label=f'Class {classes[i]}')
+            ap_i = average_precision_score(y_true_bin[:, i], y_score_bin[:, i])
+            aps.append(ap_i)
+            ax.plot(rec, prec, lw=1.2, alpha=0.8, label=f'Class {classes[i]} (AP={ap_i:.3f})')
+        if aps:
+            ax.set_title(f'Multiclass PR (mean AP={float(np.mean(aps)):.3f})')
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1.05)
     ax.legend(loc='lower left')
+    ax.set_xlabel('Recall')
+    ax.set_ylabel('Precision')
     return Graph.from_axes(ax)
 
 
@@ -255,16 +338,20 @@ def plotkfold_results(results: Mapping[str, np.ndarray]):
             continue
         # Plot only per-fold points and a summary band (mean ± std).
         x = np.arange(1, len(vals) + 1)
-        ax.scatter(x, vals, color='black')
+        ax.scatter(x, vals, color=DEFAULT_PALETTE[0], edgecolor='k', zorder=3)
         mean = float(np.mean(vals))
         std = float(np.std(vals))
         # shaded band for mean +/- std
-        ax.fill_between([0.5, len(vals) + 0.5], mean - std, mean + std, color='C0', alpha=0.12)
-        ax.hlines(mean, xmin=0.5, xmax=len(vals) + 0.5, colors='C0', linestyles='--', label=f'mean={mean:.3f}')
+        ax.fill_between([0.5, len(vals) + 0.5], mean - std, mean + std, color=DEFAULT_PALETTE[0], alpha=0.12)
+        ax.hlines(mean, xmin=0.5, xmax=len(vals) + 0.5, colors=DEFAULT_PALETTE[0], linestyles='--', label=f'mean={mean:.3f}')
         ax.set_xlim(0.5, len(vals) + 0.5)
         ax.set_xticks(x)
         ax.set_ylabel(metric.capitalize())
         ax.set_title(f"{metric.capitalize()} per fold (mean={mean:.3f}, std={std:.3f})")
+        ax.grid(axis='y', alpha=0.25)
+        # annotate each point with its value (small font)
+        for xi, yi in zip(x, vals):
+            ax.text(xi, yi + 0.005, f"{yi:.3f}", ha='center', va='bottom', fontsize=7)
     return Graph.from_figure(fig), axes
 
 

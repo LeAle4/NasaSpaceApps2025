@@ -191,22 +191,35 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
     params = params or {}
 
     progress.stage("training", "Starting model training")
-    progress.step(f"RandomForest params: {params}")
+    # Show params at higher verbosity as structured details
+    progress.step("RandomForest initialization", verbosity=2, details={"params": params})
 
     # Create Model wrapper and perform stratified train/test split
     wrapper = Model(params=params, random_state=random_state)
 
-    progress.step("Splitting data into train and test sets")
+    progress.step("Splitting data into train and test sets", verbosity=1, details={"test_size": test_size, "random_state": rs})
     rs = 42 if random_state is None else random_state
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=rs, stratify=y
     )
+    # Report resulting split shapes and label distribution at verbose level
+    try:
+        y_train_dist = dict(zip(*np.unique(y_train, return_counts=True)))
+    except Exception:
+        y_train_dist = None
+    progress.step("Train/test split complete", verbosity=2, details={"X_train_shape": getattr(X_train, 'shape', None), "X_test_shape": getattr(X_test, 'shape', None), "y_train_distribution": y_train_dist})
 
-    progress.step("Fitting RandomForest on training data")
+    progress.step("Fitting RandomForest on training data", verbosity=1)
     wrapper.fit(X_train, y_train)
     clf = wrapper.model
+    # After training, report model summary and OOB (if present) at verbose level
+    try:
+        model_oob = getattr(clf, 'oob_score_', None)
+    except Exception:
+        model_oob = None
+    progress.step("Model fitted", verbosity=2, details={"oob_score": model_oob, "n_estimators": wrapper.get_params().get('n_estimators')})
 
-    progress.step("Predicting on test set and computing metrics")
+    progress.step("Predicting on test set and computing metrics", verbosity=1)
     y_pred = clf.predict(X_test)
     cm = confusion_matrix(y_test, y_pred)
     test_acc = accuracy_score(y_test, y_pred)
@@ -217,6 +230,14 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
 
     # Score object used by ROC/PR plotting (probabilities or decision scores)
     y_score = wrapper.get_scores(X_test)
+    # Provide a brief preview of the score object at verbose level
+    try:
+        score_shape = np.asarray(y_score).shape
+        score_dtype = str(np.asarray(y_score).dtype)
+    except Exception:
+        score_shape = None
+        score_dtype = None
+    progress.step("Prepared score object for ROC/PR plotting", verbosity=2, details={"score_shape": score_shape, "score_dtype": score_dtype})
 
     results = {
         'wrapper': wrapper,
@@ -255,6 +276,7 @@ def create_visualizations(results: dict, random_state: Optional[int] = None):
     y_score = results['y_score']
 
     progress.stage("visualization", "Creating visualization Graph objects")
+    progress.step("Preparing combined data for visualizations", verbosity=2, details={"X_shape": getattr(X, 'shape', None), "y_shape": getattr(y, 'shape', None)})
 
     graphs = {}
 
@@ -262,39 +284,48 @@ def create_visualizations(results: dict, random_state: Optional[int] = None):
     graphs['confusion_matrix'] = visualization.plot_confusion_matrix(cm, labels=labels)
 
     # Cross-validation scores (simple diagnostic)
-    progress.step("Computing cross-validation scores")
+    progress.step("Computing cross-validation scores", verbosity=1, details={"cv": 10})
     scores = visualization.compute_cv_scores(clf, X, y, cv=10)
     graphs['cv_scores'] = visualization.plot_cv_scores(scores)
 
     # K-fold detailed per-metric results and plot
     try:
-        progress.step("Computing per-fold metrics (k-fold)")
+        progress.step("Computing per-fold metrics (k-fold)", verbosity=1)
         from metrics import ten_fold_cross_validation
         rs_k = 42 if random_state is None else random_state
         kfold_results = ten_fold_cross_validation(clf, X, y, n_splits=10, random_state=rs_k)
         kf_graph, _ = visualization.plotkfold_results(kfold_results)
         graphs['kfold_results'] = kf_graph
+        # Summarize k-fold means at verbose level
+        try:
+            kf_summary = {k: float(np.mean(v)) for k, v in kfold_results.items()}
+        except Exception:
+            kf_summary = None
+        progress.step("K-fold metrics computed", verbosity=2, details={"kfold_summary": kf_summary})
     except Exception as e:
-        progress.step(f"Skipping k-fold detailed plot: {e}")
+        progress.step(f"Skipping k-fold detailed plot: {e}", verbosity=1)
 
     # ROC and PR curves
+    progress.step("Creating ROC AUC plot", verbosity=1)
     graphs['roc_auc'] = visualization.plot_roc_auc(y_test, y_score)
+    progress.step("Creating Precision-Recall plot", verbosity=1)
     graphs['pr_auc'] = visualization.plot_pr_auc(y_test, y_score)
 
     # True positives vs others and train/test accuracy
+    progress.step("Creating true-positives vs others plot", verbosity=1)
     graphs['tp_vs_others'] = visualization.plot_truepositives_vs_others(y_test, y_pred)
-    progress.step("Creating train/test accuracy plot")
+    progress.step("Creating train/test accuracy plot", verbosity=1, details={"train_acc": float(train_acc), "test_acc": float(test_acc)})
     graphs['train_test_accuracy'] = visualization.plot_train_test_accuracy(float(train_acc), float(test_acc))
 
     # Permutation importances (quick mode) - keep optional and non-fatal
     try:
-        progress.step("Computing permutation importances (quick)")
+        progress.step("Computing permutation importances (quick)", verbosity=1, details={"n_repeats": 10, "n_features": getattr(results['X_test'], 'shape', (None, None))[1] if hasattr(results['X_test'], 'shape') else None})
         perm_res = wrapper.permutation_importance(results['X_test'], results['y_test'], n_repeats=10, random_state=random_state)
         perm_mean = getattr(perm_res, 'importances_mean', None)
         if perm_mean is not None:
             graphs['permutation_importance'] = visualization.plot_permutation_importance(perm_mean, results['X_test'].columns, top_n=30)
     except Exception as e:
-        progress.step(f"Skipping permutation importance plot: {e}")
+        progress.step(f"Skipping permutation importance plot: {e}", verbosity=1)
 
     return graphs
 
@@ -318,12 +349,15 @@ def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, compute_perm
         dict of metrics
     """
     progress.stage("evaluation", "Computing aggregated evaluation metrics")
+    progress.step("Starting metrics aggregation", verbosity=1)
 
     # Prefer project-level evaluate_model if available (keeps output consistent)
     try:
         from metrics import evaluate_model
+        progress.step("Using project evaluate_model implementation", verbosity=2)
         return evaluate_model(clf, X_train, X_test, y_train, y_test, compute_permutation=compute_permutation)
     except Exception:
+        progress.step("Project evaluate_model not available; using fallback sklearn-based metrics", verbosity=1)
         pass
 
     # Fallback: core metrics computed with sklearn (kept concise)
@@ -380,6 +414,7 @@ def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, compute_perm
     if compute_permutation:
         try:
             rs = 42 if random_state is None else random_state
+            progress.step("Computing permutation importances for metrics", verbosity=2, details={"n_repeats": 30})
             perm = _perm(clf, X_test, y_test, n_repeats=30, random_state=rs)
             imp_mean = getattr(perm, 'importances_mean', None)
             imp_std = getattr(perm, 'importances_std', None)

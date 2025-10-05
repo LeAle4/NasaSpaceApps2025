@@ -75,7 +75,8 @@ def evaluate_model(
     # Basic predictions
     y_pred = estimator.predict(X_test)
     results["accuracy"] = float(accuracy_score(y_test, y_pred))
-    results["confusion_matrix"] = confusion_matrix(y_test, y_pred)
+    # Convert confusion matrix to plain lists so the result is JSON-serializable
+    results["confusion_matrix"] = confusion_matrix(y_test, y_pred).tolist()
     results["classification_report"] = classification_report(y_test, y_pred, output_dict=True)
 
     # Additional scalar metrics
@@ -86,26 +87,34 @@ def evaluate_model(
     # Probabilistic metrics if available
     y_proba = estimator.predict_proba(X_test) if hasattr(estimator, "predict_proba") else None
     if y_proba is not None:
+        # Probabilistic metrics: try to compute but skip keys on failure
         try:
             results["log_loss"] = float(log_loss(y_test, y_proba))
         except Exception:
-            results["log_loss"] = None
-        results["brier_score"] = _compute_brier(y_test, y_proba)
-        # top-k accuracy for multiclass
+            # omit key if not computable
+            results.pop("log_loss", None)
+        try:
+            results["brier_score"] = _compute_brier(y_test, y_proba)
+        except Exception:
+            results.pop("brier_score", None)
+        # top-k accuracy for multiclass: only add when computable
         try:
             results[f"top_{top_k}_accuracy"] = float(top_k_accuracy_score(y_test, y_proba, k=top_k))
         except Exception:
-            results[f"top_{top_k}_accuracy"] = None
+            # do not include top_k key if not available
+            results.pop(f"top_{top_k}_accuracy", None)
     else:
         results.update({"log_loss": None, "brier_score": None, f"top_{top_k}_accuracy": None})
 
     # Optional permutation importance (may be slow)
     if compute_permutation:
+        # compute permutation importances and keep only JSON-friendly arrays
         pi = permutation_importance(estimator, X_test, y_test, n_repeats=n_repeats, random_state=random_state, n_jobs=-1)
+        imp_mean = getattr(pi, 'importances_mean', None)
+        imp_std = getattr(pi, 'importances_std', None)
         results["permutation_importance"] = {
-            "importances_mean": getattr(pi, 'importances_mean', None),
-            "importances_std": getattr(pi, 'importances_std', None),
-            "result_obj": pi,
+            "importances_mean": imp_mean.tolist() if imp_mean is not None else None,
+            "importances_std": imp_std.tolist() if imp_std is not None else None,
         }
 
     # Optional learning curve
@@ -118,12 +127,18 @@ def evaluate_model(
             n_jobs=-1,
             train_sizes=np.linspace(0.1, 1.0, 5),
         )
-        # learning_curve returns (train_sizes, train_scores, test_scores)
-        results["learning_curve"] = {"train_sizes": lc[0], "train_scores": lc[1], "test_scores": lc[2]}
+        # Convert arrays to lists for JSON compatibility
+        results["learning_curve"] = {
+            "train_sizes": lc[0].tolist(),
+            "train_scores": [s.tolist() for s in lc[1]],
+            "test_scores": [s.tolist() for s in lc[2]],
+        }
 
     # OOB score if present (RandomForest)
+    # Only include oob_score when present to avoid nulls in JSON
     oob_val = getattr(estimator, "oob_score_", None)
-    results["oob_score"] = float(oob_val) if oob_val is not None else None
+    if oob_val is not None:
+        results["oob_score"] = float(oob_val)
 
     return results
 
