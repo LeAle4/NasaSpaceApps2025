@@ -156,6 +156,9 @@ class MainWindow(QMainWindow):
         self.search_timer.setSingleShot(True)
         self.search_timer.timeout.connect(self.perform_search)
         
+        # Store orbit visualization windows
+        self.orbit_windows = []
+        
         self.setupUi()
         
     def setupUi(self):
@@ -309,7 +312,35 @@ class MainWindow(QMainWindow):
         self.table_exoplanets.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_exoplanets.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_exoplanets.setAlternatingRowColors(True)
+        # Connect row selection to enable orbit button
+        self.table_exoplanets.itemSelectionChanged.connect(self.on_exoplanet_row_selected)
         self.data_viewer_layout.addWidget(self.table_exoplanets)
+        
+        # Add orbit visualization button below table
+        self.orbit_button_layout = QHBoxLayout()
+        self.btn_visualize_orbit = QPushButton('🌍 Visualize Orbit')
+        self.btn_visualize_orbit.setEnabled(False)
+        self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
+        self.btn_visualize_orbit.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        self.orbit_button_layout.addStretch()
+        self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
+        self.orbit_button_layout.addStretch()
+        self.data_viewer_layout.addLayout(self.orbit_button_layout)
         
         self.modelosLayout.addWidget(self.data_viewer_frame)
         
@@ -320,15 +351,13 @@ class MainWindow(QMainWindow):
         self.labelTrain = QLabel("Training: configure training datasets and start training")
         self.labelTrain.setFont(QFont("Arial", 10, QFont.Bold))
         self.trainLayout.addWidget(self.labelTrain)
-    # --- Training dataset upload controls ---
-    # Small UI to select a single input table (CSV/TSV/VOTable/IPAC)
-    # and then load it for preview or training.
+        
+        # Training controls (Features and Labels)
         self.train_controls_frame = QFrame()
         self.train_controls_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.train_controls_frame.setLineWidth(2)
         self.train_controls_layout = QHBoxLayout(self.train_controls_frame)
 
-        # Features and Labels selectors (split dataset)
         # Features selector
         self.label_features = QLabel("Features CSV:")
         self.train_controls_layout.addWidget(self.label_features)
@@ -364,10 +393,9 @@ class MainWindow(QMainWindow):
         self.train_controls_layout.addWidget(self.btn_load_labels)
 
         self.train_controls_layout.addStretch()
-
         self.trainLayout.addWidget(self.train_controls_frame)
 
-        # --- Random Forest parameter controls ---
+        # Random Forest parameters
         self.rf_params_frame = QFrame()
         self.rf_params_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.rf_params_frame.setLineWidth(2)
@@ -420,15 +448,13 @@ class MainWindow(QMainWindow):
         self.rf_params_layout.addStretch()
         self.trainLayout.addWidget(self.rf_params_frame)
 
-    # Preview table for the uploaded dataset (with pagination)
-    # The preview uses paging to avoid rendering very large tables at once.
-    # Table widgets provide built-in scrollbars so large rows/columns are navigable.
+        # Dataset preview frame
         self.dataset_preview_frame = QFrame()
         self.dataset_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.dataset_preview_frame.setLineWidth(2)
         self.dataset_preview_layout = QVBoxLayout(self.dataset_preview_frame)
 
-    # Header + pagination controls for dataset preview (page-size navigation)
+        # Header + pagination controls
         self.dataset_header_layout = QHBoxLayout()
         self.label_dataset_preview = QLabel("Dataset preview:")
         self.dataset_header_layout.addWidget(self.label_dataset_preview)
@@ -469,7 +495,6 @@ class MainWindow(QMainWindow):
         self.dataset_pagination_layout.addWidget(self.btn_dataset_last)
 
         self.dataset_header_layout.addWidget(self.dataset_pagination_widget)
-        # Hidden by default; becomes visible when dataset has multiple pages
         self.dataset_pagination_widget.setVisible(False)
 
         self.dataset_preview_layout.addLayout(self.dataset_header_layout)
@@ -481,7 +506,7 @@ class MainWindow(QMainWindow):
         self.dataset_preview_layout.addWidget(self.table_dataset_preview)
         self.trainLayout.addWidget(self.dataset_preview_frame)
 
-        # Small Labels preview table (shows label dataframe preview)
+        # Labels preview
         self.labels_preview_frame = QFrame()
         self.labels_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.labels_preview_frame.setLineWidth(2)
@@ -494,14 +519,12 @@ class MainWindow(QMainWindow):
         self.table_labels_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_labels_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_labels_preview.setAlternatingRowColors(True)
-        # Make labels preview compact
         self.table_labels_preview.setMinimumHeight(120)
         self.labels_preview_layout.addWidget(self.table_labels_preview)
 
         self.trainLayout.addWidget(self.labels_preview_frame)
 
-        # dataset paging state (keeps the full DataFrame in memory and renders
-        # only the current page to the table widget)
+        # dataset paging state
         self._dataset_df = None
         self._dataset_current_page = 0
         self._dataset_rows_per_page = 500
@@ -510,7 +533,7 @@ class MainWindow(QMainWindow):
         # Add Train first
         self.tabWidget.addTab(self.tabTrain, "Train")
 
-        # Rename 'Model' tab to 'Evaluation' (added after Train)
+        # Rename 'Model' tab to 'Evaluation'
         self.tabWidget.addTab(self.tabModelos, "Evaluation")
         
         # ========== PESTAÑA DE DATOS (DATABASE) ==========
@@ -655,7 +678,7 @@ class MainWindow(QMainWindow):
         self.table_database.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_database.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_database.setAlternatingRowColors(True)
-        self.table_database.setSortingEnabled(False)  # Desactivamos el sorting nativo
+        self.table_database.setSortingEnabled(False)
         self.db_viewer_layout.addWidget(self.table_database)
         
         self.datosLayout.addWidget(self.db_viewer_frame)
@@ -678,14 +701,95 @@ class MainWindow(QMainWindow):
         # Cargar base de datos inicial
         self.refresh_database()
 
+    # ========== ORBIT VISUALIZATION METHODS ==========
+    
+    def on_exoplanet_row_selected(self):
+        """Enable orbit visualization button when a row is selected in the table."""
+        selected_items = self.table_exoplanets.selectedItems()
+        self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.current_dataframe is not None)
+    
+    def open_orbit_visualization(self):
+        """Open a new window with the orbit visualization for the selected exoplanet."""
+        if self.current_dataframe is None:
+            QMessageBox.warning(self, "No Data", "No exoplanet data loaded.")
+            return
+        
+        selected_rows = self.table_exoplanets.selectionModel().selectedRows()
+        if not selected_rows:
+            QMessageBox.warning(self, "No Selection", "Please select an exoplanet row to visualize.")
+            return
+        
+        # Get the selected row index (in the current page view)
+        view_row_index = selected_rows[0].row()
+        
+        # Calculate the actual DataFrame row index considering pagination
+        actual_row_index = self.current_page * self.rows_per_page + view_row_index
+        
+        if actual_row_index >= len(self.current_dataframe):
+            QMessageBox.warning(self, "Invalid Selection", "Selected row is out of range.")
+            return
+        
+        try:
+            # Import orbit module
+            from backend import orbit
+            
+            # Create a new window for the orbit visualization
+            orbit_window = QMainWindow(self)
+            orbit_window.setWindowTitle(f"Orbit Visualization - Row {actual_row_index}")
+            orbit_window.resize(1200, 800)
+            
+            # Create central widget and layout
+            central_widget = QWidget()
+            layout = QVBoxLayout(central_widget)
+            layout.setContentsMargins(0, 0, 0, 0)
+            
+            # Create orbit visualization as a child widget
+            # Pass parent=central_widget and run_app=False to embed it
+            sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
+              'koi_smass':1.0,'koi_srad':1.0,'koi_prad':1.00,'koi_sma':0.2734,
+              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
+            df_sample = pd.DataFrame([sample])
+            orbit_ctx = orbit.create_child_widget(
+                df=df_sample,
+                row_index=0,
+                speed=5.0,
+                show_solar_system=True,
+                show_habitable_zone=True,
+                parent=central_widget
+            )
+
+            # Add the canvas to the layout
+            layout.addWidget(orbit_ctx['canvas'].native)
+            
+            orbit_window.setCentralWidget(central_widget)
+            
+            # Store reference to prevent garbage collection
+            self.orbit_windows.append(orbit_window)
+            
+            # Show the window
+            orbit_window.show()
+            
+            self.statusbar.showMessage(f"Opened orbit visualization for row {actual_row_index}", 3000)
+            
+        except ImportError as e:
+            QMessageBox.critical(
+                self,
+                "Import Error",
+                f"Could not import orbit module. Make sure it's in the backend folder.\n\nError: {e}"
+            )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Visualization Error",
+                f"Error creating orbit visualization:\n\n{str(e)}"
+            )
+            import traceback
+            traceback.print_exc()
+
     # ========== MÉTODOS ORIGINALES (PESTAÑA MODELO) ==========
     
     def open_csv_batch(self):
-        """Open a file dialog to select a CSV batch and perform basic validation.
-
-        Emits `load_csv_signal(file_path)` when a valid CSV is selected. UI
-        errors are shown with QMessageBox dialogs.
-        """
+        """Open a file dialog to select a CSV batch and perform basic validation."""
         try:
             file_path, _ = QFileDialog.getOpenFileName(
                 self,
@@ -738,7 +842,6 @@ class MainWindow(QMainWindow):
             self._rejected_csv = file_path
             self.statusbar.showMessage(f"Rejected CSV selected", 2000)
 
-    # New: Features / Labels file selection and loading
     def select_features_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select features CSV", "", "CSV Files (*.csv);;All files (*)")
         if file_path:
@@ -784,7 +887,6 @@ class MainWindow(QMainWindow):
 
         self._features_df = df
         self.statusbar.showMessage(f"Features loaded: {len(df)} rows", 2000)
-        # Use existing dataset preview for features
         self.display_dataset_preview(df)
 
     def load_labels_clicked(self):
@@ -841,25 +943,17 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage(f"Output folder set", 2000)
 
     def start_training_clicked(self):
-        # Ensure paths exist
         confirmed = getattr(self, '_confirmed_csv', None)
         rejected = getattr(self, '_rejected_csv', None)
         outdir = getattr(self, '_out_dir', None)
         if not confirmed or not rejected:
             QMessageBox.warning(self, "Missing files", "Please select both confirmed and rejected CSV files before training.")
             return
-        # Emit signal to backend
         self.start_training_signal.emit(confirmed, rejected, outdir or '')
         self.statusbar.showMessage("Training started in background", 2000)
 
     def get_rf_params(self):
-        """Return a dict with Random Forest parameters from the UI controls.
-
-        Conversions:
-        - max_depth: 0 -> None
-        - random_state: -1 -> None
-        - n_jobs: 0 -> None
-        """
+        """Return a dict with Random Forest parameters from the UI controls."""
         try:
             n_estimators = int(self.spin_n_estimators.value())
             max_depth = int(self.spin_max_depth.value())
@@ -875,18 +969,14 @@ class MainWindow(QMainWindow):
                 'n_jobs': n_jobs
             }
         except Exception:
-            # Fallback to sensible defaults
             return {'n_estimators': 100, 'max_depth': None, 'random_state': None, 'n_jobs': 1}
 
-    # === Dataset upload handlers for Train tab ===
     def select_dataset_file(self):
-        # Ask user for a dataset file path (supports multiple table formats)
         file_path, _ = QFileDialog.getOpenFileName(self, "Select dataset CSV", "", "CSV Files (*.csv);;All files (*)")
         if not file_path:
             return
         self._dataset_path = file_path
         self.dataset_path_label.setText(os.path.basename(file_path))
-        # Enable load button for supported types
         ext = os.path.splitext(file_path)[1].lower()
         supported = ['.csv', '.tsv', '.tab', '.vot', '.votable', '.xml', '.tbl']
         if ext in supported:
@@ -902,7 +992,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No file", "No dataset selected. Use 'Select Dataset' first.")
             return
 
-    # Choose the appropriate loader in analysis.dataio based on extension.
         ext = os.path.splitext(path)[1].lower()
         try:
             if ext == '.csv':
@@ -914,7 +1003,6 @@ class MainWindow(QMainWindow):
             elif ext == '.tbl':
                 df, status, msg = dataio.loadipactable(path)
             else:
-                # Fallback to CSV parser
                 df, status, msg = dataio.loadcsvfile(path)
         except Exception as e:
             QMessageBox.critical(self, "Load error", f"Error calling data loader: {e}")
@@ -924,17 +1012,12 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", f"Failed to load dataset:\n{msg}")
             return
 
-        # store DataFrame and show first page
         self._dataset_df = df
         self.statusbar.showMessage(f"Dataset loaded: {len(df)} rows", 2000)
         self.display_dataset_preview(df)
 
     def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
-        """Store the dataset and render page 0 into the preview table.
-
-        We keep the full DataFrame in memory (`self._dataset_df`) and only
-        render the current page to the QTableWidget for responsiveness.
-        """
+        """Store the dataset and render page 0 into the preview table."""
         if dataframe is None or dataframe.empty:
             self._dataset_df = None
             self.table_dataset_preview.setRowCount(0)
@@ -942,7 +1025,6 @@ class MainWindow(QMainWindow):
             self.dataset_pagination_widget.setVisible(False)
             return
 
-        # store and initialize paging
         self._dataset_df = dataframe.copy()
         self._dataset_current_page = 0
 
@@ -953,7 +1035,6 @@ class MainWindow(QMainWindow):
         else:
             self.dataset_pagination_widget.setVisible(False)
 
-        # load first page
         self.load_current_dataset_page()
 
     def load_current_dataset_page(self):
@@ -969,13 +1050,9 @@ class MainWindow(QMainWindow):
 
         page_data = self._dataset_df.iloc[start_row:end_row]
 
-        # Update header label
         self.label_dataset_preview.setText(f"Dataset preview (Showing {start_row+1}-{end_row} of {total_rows})")
-
-        # Update page info
         self.label_dataset_page_info.setText(f'Page {self._dataset_current_page + 1} of {total_pages}')
 
-        # Populate table
         self.table_dataset_preview.setRowCount(len(page_data))
         self.table_dataset_preview.setColumnCount(len(page_data.columns))
         self.table_dataset_preview.setHorizontalHeaderLabels(page_data.columns.tolist())
@@ -988,28 +1065,23 @@ class MainWindow(QMainWindow):
 
         self.table_dataset_preview.resizeColumnsToContents()
 
-        # Update nav buttons
         self.btn_dataset_first.setEnabled(self._dataset_current_page > 0)
         self.btn_dataset_prev.setEnabled(self._dataset_current_page > 0)
         self.btn_dataset_next.setEnabled(self._dataset_current_page < total_pages - 1)
         self.btn_dataset_last.setEnabled(self._dataset_current_page < total_pages - 1)
 
-        # Make sure pagination widget visible state is consistent
         self.dataset_pagination_widget.setVisible(total_pages > 1)
 
     def go_to_first_dataset_page(self):
-        """Jump to first page and render it."""
         self._dataset_current_page = 0
         self.load_current_dataset_page()
 
     def go_to_prev_dataset_page(self):
-        """Go one page back if possible."""
         if self._dataset_current_page > 0:
             self._dataset_current_page -= 1
             self.load_current_dataset_page()
 
     def go_to_next_dataset_page(self):
-        """Advance one page if not on the last page."""
         if self._dataset_df is not None:
             total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
             if self._dataset_current_page < total_pages - 1:
@@ -1017,7 +1089,6 @@ class MainWindow(QMainWindow):
                 self.load_current_dataset_page()
 
     def go_to_last_dataset_page(self):
-        """Jump to the last page and render it."""
         if self._dataset_df is not None:
             total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
             self._dataset_current_page = total_pages - 1
@@ -1034,11 +1105,7 @@ class MainWindow(QMainWindow):
         self.enable_button_selection()
         
     def remover_archivo(self):
-        """Remove the selected batch entry from the list and notify backend.
-
-        This method updates the UI list widget and emits `remove_batch_signal`
-        with the removed batch id so the backend can free related resources.
-        """
+        """Remove the selected batch entry from the list and notify backend."""
         items_seleccionados = self.lista_archivos.selectedItems()
         if not items_seleccionados:
             return
@@ -1052,10 +1119,7 @@ class MainWindow(QMainWindow):
         self.clear_table_view()
     
     def limpiar_archivos(self):
-        """Clear all loaded batches after user confirmation.
-
-        Emits `clear_batches_signal` so the backend can reset session state.
-        """
+        """Clear all loaded batches after user confirmation."""
         reply = QMessageBox.question(
             self,
             "Confirmar",
@@ -1082,6 +1146,7 @@ class MainWindow(QMainWindow):
         self.current_dataframe = None
         self.current_batch_id = None
         self.current_page = 0
+        self.btn_visualize_orbit.setEnabled(False)
     
     def save_to_database(self):
         items_seleccionados = self.lista_archivos.selectedItems()
@@ -1092,22 +1157,15 @@ class MainWindow(QMainWindow):
         self.save_to_database_signal.emit(item.data(Qt.UserRole))
         
     def start_prediction(self):
-        """Start prediction for the selected batch or for all loaded batches.
-
-        Emits `start_prediction_signal(batch_id)` for each batch to predict. If
-        no batch is selected the user is asked whether to run predictions on
-        all loaded batches.
-        """
+        """Start prediction for the selected batch or for all loaded batches."""
         items_seleccionados = self.lista_archivos.selectedItems()
         if items_seleccionados:
-            # Predict for selected (single-selection by UI config)
             item = items_seleccionados[0]
             batch_id = item.data(Qt.UserRole)
             self.start_prediction_signal.emit(batch_id)
             self.statusbar.showMessage(f"Prediction started for Batch {batch_id}", 2000)
             return
 
-        # If nothing selected, offer to predict all loaded batches
         if self.lista_archivos.count() == 0:
             QMessageBox.information(self, "No batches", "No data batches loaded to predict.")
             return
@@ -1121,7 +1179,6 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.Yes:
-            # iterate through all items and emit start signal for each
             for i in range(self.lista_archivos.count()):
                 item = self.lista_archivos.item(i)
                 batch_id = item.data(Qt.UserRole)
@@ -1129,7 +1186,7 @@ class MainWindow(QMainWindow):
             self.statusbar.showMessage("Prediction started for all loaded batches", 2000)
 
     def load_model_clicked(self):
-        """Open a file dialog to choose a model (joblib). Ask whether to assign to selected batch or all."""
+        """Open a file dialog to choose a model (joblib)."""
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "Select model file",
@@ -1140,7 +1197,6 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        # If a batch is selected, offer to assign to selected batch or all
         items = self.lista_archivos.selectedItems()
         if items:
             item = items[0]
@@ -1158,10 +1214,8 @@ class MainWindow(QMainWindow):
             if reply == QMessageBox.Yes:
                 self.load_model_signal.emit(file_path, batch_id)
             else:
-                # set as default for all
                 self.load_model_signal.emit(file_path, -1)
         else:
-            # no selection -> set as default for all batches
             self.load_model_signal.emit(file_path, -1)
 
     def show_msg(self, tipo, mensaje):
@@ -1175,18 +1229,13 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Information", mensaje)
     
     def enable_button_selection(self):
-        """Enable or disable UI buttons depending on the current selection state.
-
-        This keeps the Start Prediction / Save to DB / Load Model buttons in sync
-        with the user's selection and available batches.
-        """
+        """Enable or disable UI buttons depending on the current selection state."""
         if self.lista_archivos.selectedItems():
             self.btn_start_prediction.setEnabled(True)
             self.btn_save_to_db.setEnabled(True)
             self.btn_load_model.setEnabled(True)
         else:
             self.btn_start_prediction.setEnabled(False)
-            # enable load model if there are any batches
             self.btn_load_model.setEnabled(self.lista_archivos.count() > 0)
         if self.lista_archivos.count() == 0:
             self.btn_clear.setEnabled(False)
@@ -1200,12 +1249,7 @@ class MainWindow(QMainWindow):
             self.request_batch_data_signal.emit(batch_id)
 
     def on_prediction_progress(self, batch_id: int, status: str, message: str):
-        """Handle backend prediction progress updates.
-
-        status is one of: 'started', 'completed', 'error'. The method updates
-        UI text and enables/disables controls appropriately.
-        """
-        # Find the list item for this batch
+        """Handle backend prediction progress updates."""
         item = None
         for i in range(self.lista_archivos.count()):
             it = self.lista_archivos.item(i)
@@ -1218,30 +1262,15 @@ class MainWindow(QMainWindow):
 
         if status == 'started':
             item.setText(f"Batch {batch_id} - Processing...")
-            # disable controls to avoid double-starting
             self.btn_start_prediction.setEnabled(False)
             self.btn_save_to_db.setEnabled(False)
         else:
-            # Completed or error - restore the text via batch_info or show error
             if status == 'completed':
-                # Request the backend to re-send batch info which will update the item
-                # The existing flow will call add_batch_info when batch_info_signal is emitted
-                # Here we optimistically re-enable controls
-                self.btn_start_prediction.setEnabled(True)
-                self.btn_save_to_db.setEnabled(True)
-            elif status == 'error':
-                # show a brief message in statusbar
-                self.statusbar.showMessage(f"Prediction error for Batch {batch_id}: {message}", 5000)
                 self.btn_start_prediction.setEnabled(True)
                 self.btn_save_to_db.setEnabled(True)
     
     def display_batch_data(self, dataframe: pd.DataFrame, batch_id: int):
-        """Display a batch DataFrame in the table widget with pagination.
-
-        Accepts an empty DataFrame which will clear the table and show a friendly
-        message. The method keeps the full DataFrame in memory and renders the
-        current page into the QTableWidget.
-        """
+        """Display a batch DataFrame in the table widget with pagination."""
         if dataframe is None or dataframe.empty:
             self.clear_table_view()
             self.label_data_viewer.setText(f"Batch {batch_id}: No data available")
@@ -1347,10 +1376,7 @@ class MainWindow(QMainWindow):
         self.refresh_database()
     
     def display_database_data(self, dataframe: pd.DataFrame, db_type: str):
-        """Render database DataFrame into the database table view.
-
-        Handles the empty case and initializes sorting/search controls.
-        """
+        """Render database DataFrame into the database table view."""
         if dataframe is None or dataframe.empty:
             self.database_dataframe = None
             self.filtered_dataframe = None
@@ -1380,10 +1406,7 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Loaded {len(dataframe)} records from {db_type} database", 2000)
     
     def sort_database(self, order: Qt.SortOrder):
-        """Sort the currently displayed database page using a background thread.
-
-        Uses `DatabaseSortThread` to avoid blocking the UI when sorting large tables.
-        """
+        """Sort the currently displayed database page using a background thread."""
         if self.filtered_dataframe is None or self.combo_sort_column.currentText() == "":
             return
         
@@ -1425,11 +1448,7 @@ class MainWindow(QMainWindow):
         self.search_timer.start(500)  # Espera 500ms después de que el usuario deje de escribir
     
     def perform_search(self):
-        """Perform the search/filter operation in a background thread.
-
-        The function preserves responsiveness by re-scheduling searches if a
-        previous search is still running.
-        """
+        """Perform the search/filter operation in a background thread."""
         search_text = self.search_input.text().strip()
         
         if self.database_dataframe is None:
@@ -1442,15 +1461,10 @@ class MainWindow(QMainWindow):
             return
         
         if search_text != "" and self.combo_sort_column.currentText() == "":
-            # No mostrar warning durante escritura, simplemente retornar
             return
         
-        # Mostrar indicador de carga solo si no estamos escribiendo activamente
-        # (el timer garantiza que el usuario ya dejó de escribir)
+        # Mostrar indicador de carga
         self.label_loading.setVisible(True)
-        
-        # NO deshabilitar controles para permitir escritura fluida
-        # self.disable_database_controls(True)
         
         column = self.combo_sort_column.currentText() if search_text != "" else None
         ascending = (self.current_sort_order == Qt.AscendingOrder)
@@ -1474,8 +1488,6 @@ class MainWindow(QMainWindow):
         
         # Ocultar indicador de carga
         self.label_loading.setVisible(False)
-        # NO re-habilitar controles porque nunca los deshabilitamos
-        # self.disable_database_controls(False)
         
         search_text = self.search_input.text().strip()
         if search_text:
@@ -1493,14 +1505,10 @@ class MainWindow(QMainWindow):
         self.combo_sort_column.setEnabled(not disable)
         self.btn_sort_asc.setEnabled(not disable)
         self.btn_sort_desc.setEnabled(not disable)
-        # NO deshabilitar search_input y btn_clear_search para mantener fluidez
-        # self.search_input.setEnabled(not disable)
-        # self.btn_clear_search.setEnabled(not disable)
     
     def clear_search(self):
         """Clear the search input and trigger a refresh via the debounce timer."""
         self.search_input.clear()
-        # El timer se encargará de ejecutar perform_search
     
     def load_current_db_page(self):
         """Carga la página actual de la base de datos"""

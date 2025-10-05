@@ -377,7 +377,25 @@ def create_habitable_zone(parent_scene, scale, inner_au, outer_au, exoplanet_inc
         'incl_mesh': incl_mesh
     }
 
-def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False):
+def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False,
+                     parent=None, run_app=True):
+    """Render (or embed) an exoplanet orbit visualization.
+
+    Parameters:
+        df (pd.DataFrame): Source dataframe with KOI columns
+        row_index (int): Index of the row to visualize
+        speed (float): Time acceleration factor
+        show_solar_system (bool): Whether to show solar system reference planets
+        show_habitable_zone (bool): Whether to draw dual-plane habitable zone rings
+        parent (QWidget | None): If provided, SceneCanvas will be created without immediate show()
+            and can be embedded inside an existing PyQt5 UI. Overlays are still attached to the
+            native canvas widget.
+        run_app (bool): If True and no parent provided, starts VisPy/Qt event loop via app.run().
+
+    Returns:
+        dict: Context with keys (canvas, view, timer, scale, row, planet, star_components, controls) when embedding,
+              otherwise empty dict after starting main loop.
+    """
     row = df.loc[row_index] if row_index in df.index else df.iloc[row_index]
 
     # KOI data
@@ -411,8 +429,8 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     path = np.array([orbital_position_vector(a_m,e,i_deg,omega_deg,Omega_deg,M0,t,P_sec) for t in ts])
     path_units = path*scale
 
-    # VisPy canvas with PyQt5 backend
-    canvas = scene.SceneCanvas(keys='interactive', show=True, bgcolor='black', size=(1000,700))
+    # VisPy canvas with PyQt5 backend (defer show if embedding)
+    canvas = scene.SceneCanvas(keys='interactive', show=(parent is None), bgcolor='black', size=(1000,700), parent=parent)
     view = canvas.central_widget.add_view()
     view.camera = scene.TurntableCamera(fov=45, distance=3.0)
     
@@ -776,10 +794,44 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     
     print("Visual effects: multi-layer glowing star, atmospheric planet, habitable zone annulus, starfield background")
     print("Controls: Mouse drag to rotate, scroll to zoom")
-    app.run()
 
-def create_instance(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False):
-    render_koi_orbit(df, row_index=row_index, speed=speed, show_solar_system=show_solar_system, show_habitable_zone=show_habitable_zone)
+    # If embedding, return context without starting event loop
+    context = {
+        'canvas': canvas,
+        'view': view,
+        'timer': timer,
+        'scale': scale,
+        'row': row,
+        'planet': planet,
+        'planet_atmosphere': planet_atmosphere,
+        'star_components': star_components,
+        'speed': speed,
+        'show_solar_system': show_solar_system,
+        'show_habitable_zone': show_habitable_zone
+    }
+    if parent is not None:
+        return context
+
+    if run_app:
+        app.run()
+    return context
+
+def create_instance(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False,
+                    parent=None, run_app=True):
+    return render_koi_orbit(df, row_index=row_index, speed=speed,
+                            show_solar_system=show_solar_system,
+                            show_habitable_zone=show_habitable_zone,
+                            parent=parent, run_app=run_app)
+
+def create_child_widget(df, row_index=0, speed=5.0, show_solar_system=True, show_habitable_zone=True, parent=None):
+    """Convenience helper for frontend embedding.
+
+    Returns context dict (see render_koi_orbit) and does not start the global event loop.
+    """
+    return render_koi_orbit(df, row_index=row_index, speed=speed,
+                             show_solar_system=show_solar_system,
+                             show_habitable_zone=show_habitable_zone,
+                             parent=parent, run_app=False)
 
 # Example usage
 if __name__=='__main__':

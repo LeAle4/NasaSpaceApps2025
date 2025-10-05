@@ -377,7 +377,25 @@ def create_habitable_zone(parent_scene, scale, inner_au, outer_au, exoplanet_inc
         'incl_mesh': incl_mesh
     }
 
-def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False, parent=None, run_app=True):
+def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False,
+                     parent=None, run_app=True):
+    """Render (or embed) an exoplanet orbit visualization.
+
+    Parameters:
+        df (pd.DataFrame): Source dataframe with KOI columns
+        row_index (int): Index of the row to visualize
+        speed (float): Time acceleration factor
+        show_solar_system (bool): Whether to show solar system reference planets
+        show_habitable_zone (bool): Whether to draw dual-plane habitable zone rings
+        parent (QWidget | None): If provided, SceneCanvas will be created without immediate show()
+            and can be embedded inside an existing PyQt5 UI. Overlays are still attached to the
+            native canvas widget.
+        run_app (bool): If True and no parent provided, starts VisPy/Qt event loop via app.run().
+
+    Returns:
+        dict: Context with keys (canvas, view, timer, scale, row, planet, star_components, controls) when embedding,
+              otherwise empty dict after starting main loop.
+    """
     row = df.loc[row_index] if row_index in df.index else df.iloc[row_index]
 
     # KOI data
@@ -411,13 +429,8 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     path = np.array([orbital_position_vector(a_m,e,i_deg,omega_deg,Omega_deg,M0,t,P_sec) for t in ts])
     path_units = path*scale
 
-    # VisPy canvas with PyQt5 backend
-    # If parent is provided, we don't auto-show or run the app loop; caller manages widget
-    canvas = scene.SceneCanvas(keys='interactive',
-                               show=(parent is None),
-                               bgcolor='black',
-                               size=(1000,700),
-                               parent=parent)
+    # VisPy canvas with PyQt5 backend (defer show if embedding)
+    canvas = scene.SceneCanvas(keys='interactive', show=(parent is None), bgcolor='black', size=(1000,700), parent=parent)
     view = canvas.central_widget.add_view()
     view.camera = scene.TurntableCamera(fov=45, distance=3.0)
     
@@ -428,9 +441,6 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     
     # Get the native widget to add PyQt5 overlays
     native_widget = canvas.native
-    if parent is not None:
-        # Ensure the native widget has the parent for Qt ownership
-        native_widget.setParent(parent)
     
     # Data values for display
     kepid = row.get('kepid', '')
@@ -784,60 +794,44 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     
     print("Visual effects: multi-layer glowing star, atmospheric planet, habitable zone annulus, starfield background")
     print("Controls: Mouse drag to rotate, scroll to zoom")
-    # If embedding (parent provided) or run_app set False, don't start the global event loop.
-    if parent is None and run_app:
-        # Only start loop if a QApplication exists or can be created
-        # If already inside a running PyQt app, app.run() would block incorrectly; rely on existing loop.
-        from PyQt5.QtWidgets import QApplication
-        qapp = QApplication.instance()
-        if qapp is None:
-            app.run()
-        else:
-            # We're inside an existing Qt application; no need to call app.run()
-            pass
 
-    return {
+    # If embedding, return context without starting event loop
+    context = {
         'canvas': canvas,
         'view': view,
         'timer': timer,
+        'scale': scale,
+        'row': row,
         'planet': planet,
         'planet_atmosphere': planet_atmosphere,
-        'exoplanet_label': exoplanet_label,
         'star_components': star_components,
-        'solar_system_planets': solar_system_planets,
-        'habitable_zone_objects': habitable_zone_objects,
-        'scale': scale,
-        'row': row
+        'speed': speed,
+        'show_solar_system': show_solar_system,
+        'show_habitable_zone': show_habitable_zone
     }
+    if parent is not None:
+        return context
 
-def create_instance(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False, parent=None, run_app=True):
-    """Backward-compatible wrapper. If parent provided, returns context dict without starting loop."""
-    return render_koi_orbit(df,
-                            row_index=row_index,
-                            speed=speed,
+    if run_app:
+        app.run()
+    return context
+
+def create_instance(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False,
+                    parent=None, run_app=True):
+    return render_koi_orbit(df, row_index=row_index, speed=speed,
                             show_solar_system=show_solar_system,
                             show_habitable_zone=show_habitable_zone,
-                            parent=parent,
-                            run_app=run_app)
+                            parent=parent, run_app=run_app)
 
-def create_child_widget(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False, parent=None):
-    """Convenience helper to embed the orbit viewer inside an existing PyQt5 window/layout.
+def create_child_widget(df, row_index=0, speed=1.0, show_solar_system=True, show_habitable_zone=True, parent=None):
+    """Convenience helper for frontend embedding.
 
-    Usage (inside your PyQt main window):
-        ctx = create_child_widget(df, parent=self)
-        self.layout().addWidget(ctx['canvas'].native)
+    Returns context dict (see render_koi_orbit) and does not start the global event loop.
     """
-    if parent is None:
-        from PyQt5.QtWidgets import QWidget
-        parent = QWidget()
-    ctx = render_koi_orbit(df,
-                           row_index=row_index,
-                           speed=speed,
-                           show_solar_system=show_solar_system,
-                           show_habitable_zone=show_habitable_zone,
-                           parent=parent,
-                           run_app=False)
-    return ctx
+    return render_koi_orbit(df, row_index=row_index, speed=speed,
+                             show_solar_system=show_solar_system,
+                             show_habitable_zone=show_habitable_zone,
+                             parent=parent, run_app=False)
 
 # Example usage
 if __name__=='__main__':
@@ -847,5 +841,4 @@ if __name__=='__main__':
     df_sample = pd.DataFrame([sample])
     
 
-    # Standalone run retains old behavior
-    create_instance(df_sample, row_index=0, speed=5.0, show_solar_system=True, show_habitable_zone=True, parent=None, run_app=True)
+    render_koi_orbit(df_sample, row_index=0, speed=5.0, show_solar_system=True, show_habitable_zone=True)
