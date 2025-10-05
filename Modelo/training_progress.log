@@ -211,3 +211,128 @@
 [2025-10-04 21:27:37]   - Predicting on test set and computing metrics
 [2025-10-04 21:27:38] STAGE VISUALIZATION: Creating and saving visualizations
 [2025-10-04 21:27:38]   - Computing cross-validation scores
+[2025-10-04 21:28:46]   - Preparing scores for ROC/PR plotting
+[2025-10-04 21:28:46]   - X_test shape=(5068, 37), y_test shape=(5068,)
+[2025-10-04 21:28:46]   - y_score preview: shape=(5068, 3), dtype=float64
+[2025-10-04 21:28:46]   - y_score sample=[[0.   0.53 0.47]
+ [0.95 0.04 0.01]
+ [0.02 0.61 0.37]
+ [0.   0.11 0.89]
+ [0.99 0.   0.01]
+ [0.97 0.01 0.02]
+ [0.96 0.04 0.  ]
+ [0.99 0.   0.01]]
+[2025-10-04 21:28:47]   - Saving train/test accuracy plot
+[2025-10-04 21:28:47] STAGE PERSISTENCE: Saving trained model to disk
+[2025-10-04 21:28:47]   - Saved model to model.joblib
+[2025-10-04 21:28:47]   - Aggregated evaluation failed: No module named 'Modelo'
+[2025-10-04 21:28:47] STAGE KFOLD_EVALUATION: Running k-fold evaluation and saving results
+[2025-10-04 21:28:47] STAGE LOAD_MODEL: Loading model from model.joblib
+[2025-10-04 21:28:47]   - Model loaded; starting 10-fold evaluation
+[2025-10-04 21:28:47] STAGE CROSS_VALIDATION: Running stratified 10-fold cross-validation
+[2025-10-04 21:28:47]   - Starting fold 1/10
+[2025-10-04 21:28:53]   - Starting fold 2/10
+[2025-10-04 21:28:59]   - Starting fold 3/10
+[2025-10-04 21:29:04]   - Starting fold 4/10
+[2025-10-04 21:29:11]   - Starting fold 5/10
+[2025-10-04 21:29:16]   - Starting fold 6/10
+[2025-10-04 21:29:21]   - Starting fold 7/10
+[2025-10-04 21:29:27]   - Starting fold 8/10
+[2025-10-04 21:29:32]   - Starting fold 9/10
+[2025-10-04 21:29:37]   - Starting fold 10/10
+[2025-10-04 21:29:43]   - Saved k-fold results to viz_out/kfold_results.png
+[2025-10-04 21:32:36] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 21:32:36]   - Reading features CSV
+[2025-10-04 21:35:08] STAGE DATA_LOAD: Loading features from data/parameters.csv and labels from data/labels.csv
+[2025-10-04 21:35:08]   - Reading features CSV
+[2025-10-04 21:35:08]   - Reading labels CSV
+[2025-10-04 21:35:08] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 21:35:08] STAGE TRAINING: Starting model training
+[2025-10-04 21:35:08]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 21:35:08]   - Splitting data into train and test sets
+[2025-10-04 21:37:38] STAGE DATA_LOAD: Loading features from data/parametersprev.csv and labels from data/labelsprev.csv
+[2025-10-04 21:37:38]   - Reading features CSV
+[2025-10-04 21:37:38]   - Reading labels CSV
+[2025-10-04 21:37:38] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 21:37:38] STAGE TRAINING: Starting model training
+[2025-10-04 21:37:38]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 21:37:38]   - Splitting data into train and test sets
+[2025-10-04 21:37:38]   - Fitting RandomForest on training data
+[2025-10-04 21:37:42]   - Predicting on test set and computing metrics
+[2025-10-04 21:37:42] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 21:37:43]   - Computing cross-validation scores
+[2025-10-04 21:39:01]   - Preparing scores for ROC/PR plotting
+[2025-10-04 21:39:01]   - X_test shape=(5068, 37), y_test shape=(5068,)
+[2025-10-04 21:39:01]   - y_score preview: shape=(5068, 3), dtype=float64
+[2025-10-04 21:39:01]   - y_score sample=[[0.   0.53 0.47]
+ [0.95 0.04 0.01]
+ [0.02 0.61 0.37]
+ [0.   0.11 0.89]
+ [0.99 0.   0.01]
+ [0.97 0.01 0.02]
+ [0.96 0.04 0.  ]
+ [0.99 0.   0.01]]
+[2025-10-04 21:39:03]   - Saving train/test accuracy plot
+[2025-10-04 21:39:03] STAGE PERSISTENCE: Saving trained model to disk
+[2025-10-04 21:39:03]   - Saved model to model.joblib
+[2025-10-04 21:39:03] STAGE EVALUATION: Computing aggregated evaluation metrics
+[2025-10-04 21:39:04]   - Saved aggregated metrics to viz_out/metrics.json
+[2025-10-04 21:39:04]   - Metrics summary: {'accuracy': 0.9429755327545383, 'balanced_accuracy': 0.9429822625341138, 'log_loss': 0.20166367753238146, 'brier_score': None, 'cohen_kappa': 0.914463425681833, 'mcc': 0.9144939215451469}
+[2025-10-04 21:39:04] STAGE KFOLD_EVALUATION: Running k-fold evaluation and saving results
+[2025-10-04 21:39:04] STAGE LOAD_MODEL: Loading model from model.joblib
+[2025-10-04 21:39:04]   - Model loaded; starting 10-fold evaluation
+[2025-10-04 21:39:04] STAGE CROSS_VALIDATION: Running stratified 10-fold cross-validation
+[2025-10-04 21:39:04]   - Starting fold 1/10
+[2025-10-04 21:39:10]   - Starting fold 2/10
+[2025-10-04 21:39:16]   - Starting fold 3/10
+[2025-10-04 21:39:21]   - Starting fold 4/10
+[2025-10-04 21:39:26]   - Starting fold 5/10
+[2025-10-04 21:39:31]   - Starting fold 6/10
+[2025-10-04 21:39:36]   - Starting fold 7/10
+[2025-10-04 21:39:42]   - Starting fold 8/10
+[2025-10-04 21:39:49]   - Starting fold 9/10
+[2025-10-04 21:39:55]   - Starting fold 10/10
+[2025-10-04 21:40:03]   - Saved k-fold results to viz_out/kfold_results.png
+[2025-10-04 21:41:32] STAGE DATA_LOAD: Loading features from data/non_candidates_processed_features.csv and labels from data/non_candidates_processed_labels.csv
+[2025-10-04 21:41:32]   - Reading features CSV
+[2025-10-04 21:41:32]   - Reading labels CSV
+[2025-10-04 21:41:32] STAGE PRE_TRAINING: Data loaded and ready; beginning training pipeline
+[2025-10-04 21:41:32] STAGE TRAINING: Starting model training
+[2025-10-04 21:41:32]   - RandomForest params: {'n_estimators': 100, 'random_state': 69, 'n_jobs': -1}
+[2025-10-04 21:41:32]   - Splitting data into train and test sets
+[2025-10-04 21:41:32]   - Fitting RandomForest on training data
+[2025-10-04 21:41:34]   - Predicting on test set and computing metrics
+[2025-10-04 21:41:35] STAGE VISUALIZATION: Creating and saving visualizations
+[2025-10-04 21:41:36]   - Computing cross-validation scores
+[2025-10-04 21:42:26]   - Preparing scores for ROC/PR plotting
+[2025-10-04 21:42:26]   - X_test shape=(3379, 37), y_test shape=(3379,)
+[2025-10-04 21:42:26]   - y_score preview: shape=(3379, 2), dtype=float64
+[2025-10-04 21:42:26]   - y_score sample=[[1.   0.  ]
+ [0.   1.  ]
+ [0.   1.  ]
+ [0.02 0.98]
+ [0.   1.  ]
+ [0.04 0.96]
+ [0.08 0.92]
+ [0.16 0.84]]
+[2025-10-04 21:42:28]   - Saving train/test accuracy plot
+[2025-10-04 21:42:28] STAGE PERSISTENCE: Saving trained model to disk
+[2025-10-04 21:42:28]   - Saved model to model.joblib
+[2025-10-04 21:42:28] STAGE EVALUATION: Computing aggregated evaluation metrics
+[2025-10-04 21:42:28]   - Saved aggregated metrics to viz_out/metrics.json
+[2025-10-04 21:42:28]   - Metrics summary: {'accuracy': 0.9952648712636875, 'balanced_accuracy': 0.9952636446761327, 'log_loss': 0.04951068476633961, 'brier_score': None, 'cohen_kappa': 0.9905297184735302, 'mcc': 0.9905637280925021}
+[2025-10-04 21:42:28] STAGE KFOLD_EVALUATION: Running k-fold evaluation and saving results
+[2025-10-04 21:42:28] STAGE LOAD_MODEL: Loading model from model.joblib
+[2025-10-04 21:42:28]   - Model loaded; starting 10-fold evaluation
+[2025-10-04 21:42:28] STAGE CROSS_VALIDATION: Running stratified 10-fold cross-validation
+[2025-10-04 21:42:28]   - Starting fold 1/10
+[2025-10-04 21:42:32]   - Starting fold 2/10
+[2025-10-04 21:42:35]   - Starting fold 3/10
+[2025-10-04 21:42:38]   - Starting fold 4/10
+[2025-10-04 21:42:41]   - Starting fold 5/10
+[2025-10-04 21:42:45]   - Starting fold 6/10
+[2025-10-04 21:42:48]   - Starting fold 7/10
+[2025-10-04 21:42:51]   - Starting fold 8/10
+[2025-10-04 21:42:54]   - Starting fold 9/10
+[2025-10-04 21:42:58]   - Starting fold 10/10
+[2025-10-04 21:43:02]   - Saved k-fold results to viz_out/kfold_results.png

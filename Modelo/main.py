@@ -27,8 +27,8 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 # Progress helpers: print timestamped stage/step messages
 import progress
 
-FEATURE_PATH = "data/parameters.csv"
-LABEL_PATH = "data/labels.csv"
+FEATURE_PATH = "data/non_candidates_processed_features.csv"
+LABEL_PATH = "data/non_candidates_processed_labels.csv"
 MODELOUT = "model.joblib"
 VIZOUT = "viz_out"
 TEST_SIZE = 0.4
@@ -182,7 +182,7 @@ def train_save_model(X, y, output_path: str, params: Optional[dict] = None):
 
     # Run aggregated evaluation and save metrics
     try:
-        from Modelo.metrics import evaluate_model
+        from metrics import evaluate_model
         progress.stage("evaluation", "Computing aggregated evaluation metrics")
         metrics = evaluate_model(clf, X_train, X_test, y_train, y_test, compute_permutation=False)
         import json
