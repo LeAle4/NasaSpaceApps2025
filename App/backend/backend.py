@@ -6,6 +6,7 @@ from . import parameters as p
 class CurrentSesion(QObject):
     popup_msg_signal = pyqtSignal(str, str)
     batch_info_signal = pyqtSignal(dict)
+    batch_data_signal = pyqtSignal(pd.DataFrame, int)  # Nueva señal para enviar datos del batch
     
     def __init__(self):
         super().__init__()
@@ -45,6 +46,16 @@ class CurrentSesion(QObject):
         # Agrega un batch a la a la base de datos.
         result = self.database.addBatchToDatabase(self.currentBatches[batch_id])
         self.popup_msg_signal.emit(result[0], result[1])
+    
+    def getBatchData(self, batch_id: int):
+        """Envía los datos del batch solicitado al frontend"""
+        if batch_id in self.currentBatches:
+            batch = self.currentBatches[batch_id]
+            if batch.batchDataFrame is not None:
+                self.batch_data_signal.emit(batch.batchDataFrame, batch_id)
+            else:
+                # Enviar DataFrame vacío si no hay datos
+                self.batch_data_signal.emit(pd.DataFrame(), batch_id)
 
 class PredictionBatch():
     _id_counter = 0
@@ -172,6 +183,4 @@ class Database():
 if __name__ == '__main__':
     prediction_batch = PredictionBatch()
     prediction_batch.readCsvData(r"C:\Users\ADMIN\Desktop\Vicente\Sistemas coheteria\NasaSpaceApps\code\NasaSpaceApps2025\Modelo\koi_exoplanets.csv")
-    
-    #hola
     
