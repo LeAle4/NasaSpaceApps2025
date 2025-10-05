@@ -1,89 +1,257 @@
-"""Visualization helpers for model evaluation.
+"""Matplotlib-based visualization helpers for model evaluation.
 
-Provides functions to build evaluation plots (PR, ROC, calibration,
-feature importances) and return either Matplotlib figures or base64-encoded
-PNG strings. Designed to be imported and used by `ensemble.train_stack`.
+This module contains small, reusable plotting helpers used by the training
+script to produce diagnostic figures. Each plotting function returns the
+matplotlib Axes instance so callers can further customize the figure or save
+it to disk (as done in `Modelo/main.py`). The helpers are intentionally
+lightweight and accept either a caller-provided Axes or create their own.
+
+Functions:
+    - plot_confusion_matrix(cm, labels, ax=None)
+    - plot_cv_scores(scores, ax=None)
+    - plot_truepositives_vs_others(y_true, y_pred, ax=None)
+    - plot_train_test_accuracy(train_acc, test_acc, ax=None)
+    - compute_cv_scores(estimator, X, y, cv=10)
+
+Notes on inputs:
+    - `cm` should be a 2D numpy array of shape (n_classes, n_classes)
+    - `labels` should be an ordered sequence of strings corresponding to the
+        rows/columns of the confusion matrix
+    - `scores` may be any iterable of numeric CV scores (will be converted to
+        a 1D numpy array)
 """
-from typing import Optional, Sequence, Tuple, List, Any
-import io
-import base64
-try:
-    import matplotlib.pyplot as plt
-except Exception:
-    plt = None
+
+from typing import Optional, Sequence, Mapping
+
+import matplotlib.pyplot as plt
+import matplotlib.cm as mcm
+import numpy as np
+from sklearn.model_selection import cross_val_score
 
 
-def fig_to_base64(fig) -> Optional[str]:
-    """Convert a Matplotlib figure to a base64-encoded PNG string.
+def plot_confusion_matrix(cm: np.ndarray, labels: Sequence[str], ax: Optional[plt.Axes] = None):
+    """Plot a confusion matrix (2D array) with labels.
 
-    Returns None if Matplotlib isn't available.
+    Args:
+        cm: confusion matrix array (shape [n_classes, n_classes])
+        labels: sequence of class labels (length n_classes)
+        ax: optional matplotlib Axes to draw on
+    Returns:
+        ax: the Axes with the plot
     """
-    if plt is None:
-        return None
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return base64.b64encode(buf.read()).decode("ascii")
+    # Create new Axes if caller did not provide one
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 5))
+
+    # Normalize inputs and prepare ticks
+    labels = list(labels)
+    ticks = np.arange(len(labels))
+
+    # Draw heatmap of the confusion matrix
+    cmap = plt.get_cmap('Blues')
+    im = ax.imshow(cm, interpolation='nearest', cmap=cmap)
+    ax.figure.colorbar(im, ax=ax)
+
+    # Set tick labels and axis labels
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+    ax.set_xticklabels(labels, rotation=45, ha='right')
+    ax.set_yticklabels(labels)
+
+    ax.set_ylabel('True label')
+    ax.set_xlabel('Predicted label')
+    ax.set_title('Confusion matrix')
+
+    # Annotate each cell with the integer count. Use a threshold based on the
+    # maximum cell value to decide text color for readability. Protect against
+    # empty matrices by checking cm.size.
+    fmt = 'd'
+    thresh = cm.max() / 2. if cm.size else 0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            ax.text(
+                j,
+                i,
+                format(int(cm[i, j]), fmt),
+                ha="center",
+                va="center",
+                color="white" if cm[i, j] > thresh else "black",
+            )
+
+    plt.tight_layout()
+    return ax
 
 
-def plot_pr_curve(precision: Optional[Sequence[float]], recall: Optional[Sequence[float]], ap: Optional[float] = None):
-    """Create a Precision-Recall plot and return base64 PNG string.
+def plot_cv_scores(scores, ax: Optional[plt.Axes] = None):
+    """Plot N-fold CV scores as a boxplot with points.
 
-    precision and recall are sequences (np arrays or lists) from
-    sklearn.metrics.precision_recall_curve. ap is optional and shown in legend.
+    Args:
+        scores: sequence of CV scores
+        ax: optional Axes
+    Returns:
+        ax
     """
-    if plt is None or precision is None or recall is None:
-        return None
-    fig, ax = plt.subplots()
-    ax.plot(recall, precision, label=f"AP={ap:.3f}" if ap is not None else None)
-    ax.set_xlabel("Recall")
-    ax.set_ylabel("Precision")
-    ax.set_title("Precision-Recall (confirmed)")
-    if ap is not None:
-        ax.legend()
-    return fig_to_base64(fig)
+    # Ensure scores are a 1-D numpy array for plotting. Accepts lists, tuples,
+    # pandas Series, or numpy arrays.
+    scores = np.asarray(list(scores))
+
+    # Create Axes if necessary
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(6, 4))
+
+    # Draw boxplot + scatter of individual fold scores to show distribution
+    ax.boxplot(scores, vert=True, notch=True, patch_artist=True)
+    ax.scatter(np.ones_like(scores), scores, color='black', alpha=0.6)
+    ax.set_ylabel('Score')
+    ax.set_xticks([1])
+    ax.set_xticklabels(['CV folds'])
+    ax.set_title('Cross-validation scores')
+    ax.grid(axis='y', linestyle='--', alpha=0.4)
+    return ax
 
 
-def plot_roc_curve(fpr: Optional[Sequence[float]], tpr: Optional[Sequence[float]], auc: Optional[float] = None):
-    """Create an ROC plot and return base64 PNG string."""
-    if plt is None or fpr is None or tpr is None:
-        return None
-    fig, ax = plt.subplots()
-    ax.plot(fpr, tpr, label=f"AUC={auc:.3f}" if auc is not None else None)
-    ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curve (confirmed)")
-    if auc is not None:
-        ax.legend()
-    return fig_to_base64(fig)
+def plot_truepositives_vs_others(y_true, y_pred, ax: Optional[plt.Axes] = None):
+    """Compare counts of true positives vs other outcomes per-class.
 
-
-def plot_calibration_curve(prob_true: Optional[Sequence[float]], prob_pred: Optional[Sequence[float]]):
-    """Create a calibration curve plot and return base64 PNG string."""
-    if plt is None or prob_true is None or prob_pred is None:
-        return None
-    fig, ax = plt.subplots()
-    ax.plot(prob_pred, prob_true, marker="o")
-    ax.plot([0, 1], [0, 1], linestyle="--", color="gray")
-    ax.set_xlabel("Mean predicted probability")
-    ax.set_ylabel("Fraction of positives")
-    ax.set_title("Calibration curve (confirmed)")
-    return fig_to_base64(fig)
-
-
-def plot_feature_importances(importances: Optional[List[Tuple[str, Any]]], title: str = "Feature importances (top)", top_n: int = 20):
-    """Plot horizontal bar chart for feature importances and return base64 PNG string.
-
-    `importances` is a list of (name, value) pairs sorted descending by value.
+    Args:
+        y_true: true labels
+        y_pred: predicted labels
+        ax: optional Axes
+    Returns:
+        ax
     """
-    if plt is None or not importances:
-        return None
-    names, vals = zip(*importances[:top_n])
-    fig, ax = plt.subplots(figsize=(8, max(3, len(names) * 0.25)))
-    ax.barh(range(len(names)), vals[::-1])
-    ax.set_yticks(range(len(names)))
-    ax.set_yticklabels(list(names)[::-1])
-    ax.set_title(title)
-    return fig_to_base64(fig)
+    # Convert inputs to numpy arrays for vectorized operations
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
+    # Determine the set of labels present in either true or predicted arrays
+    labels = np.unique(np.concatenate([y_true, y_pred]))
+
+    # Count true positives (correct predictions) and other outcomes (where
+    # the true label was the class but the prediction was different)
+    tp_counts = []
+    other_counts = []
+    for lab in labels:
+        tp = np.sum((y_true == lab) & (y_pred == lab))
+        others = np.sum((y_true == lab) & (y_pred != lab))
+        tp_counts.append(int(tp))
+        other_counts.append(int(others))
+
+    x = np.arange(len(labels))
+    width = 0.35
+
+    # Create Axes if not provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 4))
+
+    # Two side-by-side bars per class: true positives and others
+    ax.bar(x - width / 2, tp_counts, width, label='True Positives', color='tab:green')
+    ax.bar(x + width / 2, other_counts, width, label='Others (false/misclassified)', color='tab:orange')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45)
+    ax.set_ylabel('Count')
+    ax.set_title('True positives vs others (per class)')
+    ax.legend()
+    ax.grid(axis='y', linestyle='--', alpha=0.3)
+    plt.tight_layout()
+    return ax
+
+
+def plot_train_test_accuracy(train_acc: float, test_acc: float, ax: Optional[plt.Axes] = None):
+    """Simple bar chart comparing train and test accuracy.
+    """
+    # Create Axes if caller didn't provide one
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5, 4))
+
+    labels = ['Train', 'Test']
+    values = [train_acc, test_acc]
+    colors = ['tab:blue', 'tab:purple']
+
+    # Draw bars and format the y-axis to [0, 1] for accuracy
+    ax.bar(labels, values, color=colors)
+    ax.set_ylim(0, 1)
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Train vs Test Accuracy')
+
+    # Annotate numeric values above each bar for readability
+    for i, v in enumerate(values):
+        ax.text(i, v + 0.02, f"{v:.3f}", ha='center')
+    ax.grid(axis='y', linestyle='--', alpha=0.3)
+    plt.tight_layout()
+    return ax
+
+
+def compute_cv_scores(estimator, X, y, cv: int = 10, scoring: str = 'accuracy'):
+    """Compute cross-validation scores using sklearn.cross_val_score and return the array of scores.
+
+    Args:
+        estimator: an sklearn estimator implementing fit/predict
+        X: feature matrix
+        y: labels
+        cv: number of folds
+        scoring: scoring string passed to cross_val_score
+    Returns:
+        scores: numpy array of CV scores
+    """
+    # Use all cores for faster CV when available; callers may choose to pass an
+    # unfitted estimator or one configured with specific hyperparameters.
+    scores = cross_val_score(estimator, X, y, cv=cv, scoring=scoring, n_jobs=-1)
+    return scores
+
+def plotkfold_results(results: Mapping[str, np.ndarray], ax: Optional[plt.Axes] = None):
+    """Plot per-fold k-fold results produced by `ten_fold_cross_validation`.
+
+    Args:
+        results: mapping with keys 'accuracy', 'precision', 'recall', 'f1'
+                 each value should be a 1-D array-like of per-fold scores.
+        ax: (ignored) kept for API compatibility with other helpers. The
+            function creates a 2x2 set of subplots and returns the figure
+            and axes.
+
+    Returns:
+        fig, axes: matplotlib Figure and a 2x2 array of Axes objects.
+
+    Behavior/notes:
+        - Missing metrics will be skipped but the function will attempt to
+          plot any of the four supported metrics that are present in `results`.
+        - Each subplot shows the per-fold points, a boxplot, and the mean/std
+          annotated in the title.
+    """
+    # Convert results to a dict-like mapping and validate inputs
+    if results is None:
+        raise ValueError("results must be a mapping produced by ten_fold_cross_validation")
+
+    metrics = ["accuracy", "precision", "recall", "f1"]
+    present = [m for m in metrics if m in results]
+    if not present:
+        raise ValueError(f"No supported metrics found in results. Expected one of {metrics}")
+
+    # Create a 2x2 figure
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
+    axes = axes.reshape(-1)
+
+    for idx, metric in enumerate(metrics):
+        ax_i = axes[idx]
+        if metric not in results:
+            # Clear unused subplot
+            ax_i.axis('off')
+            continue
+
+        vals = np.asarray(results[metric])
+        # Defensive: flatten and ensure 1-D
+        vals = vals.ravel()
+
+        # Boxplot + scatter of fold scores
+        ax_i.boxplot(vals, vert=True, notch=True, patch_artist=True)
+        ax_i.scatter(np.arange(1, len(vals) + 1), vals, color='black', alpha=0.7)
+        ax_i.set_xticks(range(1, len(vals) + 1))
+        ax_i.set_xticklabels([str(i) for i in range(1, len(vals) + 1)])
+        ax_i.set_ylabel(metric.capitalize())
+        mean = float(np.mean(vals))
+        std = float(np.std(vals))
+        ax_i.set_title(f"{metric.capitalize()} per fold (mean={mean:.3f}, std={std:.3f})")
+        ax_i.grid(axis='y', linestyle='--', alpha=0.3)
+
+    plt.tight_layout()
+    return fig, axes

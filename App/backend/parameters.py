@@ -15,3 +15,5 @@ DATA_HEADERS = [
     'koi_smet', 'koi_smet_err1', 'koi_smet_err2', 
     'koi_srad', 'koi_srad_err1', 'koi_srad_err2'
 ]
+
+#hols
