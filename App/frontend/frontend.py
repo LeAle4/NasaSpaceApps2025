@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QThread
 from PyQt5.QtGui import *
 import pandas as pd
 import os
+from backend.analysis import dataio
 
 
 class DataLoaderThread(QThread):
@@ -319,6 +320,192 @@ class MainWindow(QMainWindow):
         self.labelTrain = QLabel("Training: configure training datasets and start training")
         self.labelTrain.setFont(QFont("Arial", 10, QFont.Bold))
         self.trainLayout.addWidget(self.labelTrain)
+    # --- Training dataset upload controls ---
+    # Small UI to select a single input table (CSV/TSV/VOTable/IPAC)
+    # and then load it for preview or training.
+        self.train_controls_frame = QFrame()
+        self.train_controls_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.train_controls_frame.setLineWidth(2)
+        self.train_controls_layout = QHBoxLayout(self.train_controls_frame)
+
+        # Features and Labels selectors (split dataset)
+        # Features selector
+        self.label_features = QLabel("Features CSV:")
+        self.train_controls_layout.addWidget(self.label_features)
+
+        self.features_path_label = QLabel("<no file selected>")
+        self.features_path_label.setMinimumWidth(260)
+        self.train_controls_layout.addWidget(self.features_path_label)
+
+        self.btn_select_features = QPushButton('Select Features')
+        self.btn_select_features.clicked.connect(self.select_features_file)
+        self.train_controls_layout.addWidget(self.btn_select_features)
+
+        self.btn_load_features = QPushButton('Load Features')
+        self.btn_load_features.clicked.connect(self.load_features_clicked)
+        self.btn_load_features.setEnabled(False)
+        self.train_controls_layout.addWidget(self.btn_load_features)
+
+        # Labels selector
+        self.label_labels = QLabel("Labels CSV:")
+        self.train_controls_layout.addWidget(self.label_labels)
+
+        self.labels_path_label = QLabel("<no file selected>")
+        self.labels_path_label.setMinimumWidth(260)
+        self.train_controls_layout.addWidget(self.labels_path_label)
+
+        self.btn_select_labels = QPushButton('Select Labels')
+        self.btn_select_labels.clicked.connect(self.select_labels_file)
+        self.train_controls_layout.addWidget(self.btn_select_labels)
+
+        self.btn_load_labels = QPushButton('Load Labels')
+        self.btn_load_labels.clicked.connect(self.load_labels_clicked)
+        self.btn_load_labels.setEnabled(False)
+        self.train_controls_layout.addWidget(self.btn_load_labels)
+
+        self.train_controls_layout.addStretch()
+
+        self.trainLayout.addWidget(self.train_controls_frame)
+
+        # --- Random Forest parameter controls ---
+        self.rf_params_frame = QFrame()
+        self.rf_params_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.rf_params_frame.setLineWidth(2)
+        self.rf_params_layout = QHBoxLayout(self.rf_params_frame)
+
+        # n_estimators
+        self.label_n_estimators = QLabel("n_estimators:")
+        self.label_n_estimators.setToolTip("Number of trees in the Random Forest")
+        self.rf_params_layout.addWidget(self.label_n_estimators)
+        self.spin_n_estimators = QSpinBox()
+        self.spin_n_estimators.setRange(1, 10000)
+        self.spin_n_estimators.setValue(100)
+        self.spin_n_estimators.setToolTip("Number of trees (default 100)")
+        self.spin_n_estimators.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_n_estimators)
+
+        # max_depth
+        self.label_max_depth = QLabel("max_depth:")
+        self.label_max_depth.setToolTip("Maximum depth of each tree (0 for None)")
+        self.rf_params_layout.addWidget(self.label_max_depth)
+        self.spin_max_depth = QSpinBox()
+        self.spin_max_depth.setRange(-1, 1000)
+        self.spin_max_depth.setValue(0)
+        self.spin_max_depth.setToolTip("Maximum depth (0 means None)")
+        self.spin_max_depth.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_max_depth)
+
+        # random_state
+        self.label_random_state = QLabel("random_state:")
+        self.label_random_state.setToolTip("Random seed for reproducibility (-1 for None)")
+        self.rf_params_layout.addWidget(self.label_random_state)
+        self.spin_random_state = QSpinBox()
+        self.spin_random_state.setRange(-1, 999999)
+        self.spin_random_state.setValue(-1)
+        self.spin_random_state.setToolTip("Random seed (-1 means None)")
+        self.spin_random_state.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_random_state)
+
+        # n_jobs
+        self.label_n_jobs = QLabel("n_jobs:")
+        self.label_n_jobs.setToolTip("Number of parallel jobs (0 for None, -1 for all cores)")
+        self.rf_params_layout.addWidget(self.label_n_jobs)
+        self.spin_n_jobs = QSpinBox()
+        self.spin_n_jobs.setRange(-1, 64)
+        self.spin_n_jobs.setValue(1)
+        self.spin_n_jobs.setToolTip("Parallel jobs (-1 use all cores)")
+        self.spin_n_jobs.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_n_jobs)
+
+        self.rf_params_layout.addStretch()
+        self.trainLayout.addWidget(self.rf_params_frame)
+
+    # Preview table for the uploaded dataset (with pagination)
+    # The preview uses paging to avoid rendering very large tables at once.
+    # Table widgets provide built-in scrollbars so large rows/columns are navigable.
+        self.dataset_preview_frame = QFrame()
+        self.dataset_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dataset_preview_frame.setLineWidth(2)
+        self.dataset_preview_layout = QVBoxLayout(self.dataset_preview_frame)
+
+    # Header + pagination controls for dataset preview (page-size navigation)
+        self.dataset_header_layout = QHBoxLayout()
+        self.label_dataset_preview = QLabel("Dataset preview:")
+        self.dataset_header_layout.addWidget(self.label_dataset_preview)
+        self.dataset_header_layout.addStretch()
+
+        self.dataset_pagination_widget = QWidget()
+        self.dataset_pagination_layout = QHBoxLayout(self.dataset_pagination_widget)
+        self.dataset_pagination_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.btn_dataset_first = QPushButton('<<')
+        self.btn_dataset_first.setMaximumWidth(40)
+        self.btn_dataset_first.clicked.connect(self.go_to_first_dataset_page)
+        self.btn_dataset_first.setEnabled(False)
+
+        self.btn_dataset_prev = QPushButton('<')
+        self.btn_dataset_prev.setMaximumWidth(40)
+        self.btn_dataset_prev.clicked.connect(self.go_to_prev_dataset_page)
+        self.btn_dataset_prev.setEnabled(False)
+
+        self.label_dataset_page_info = QLabel('Page 0 of 0')
+        self.label_dataset_page_info.setAlignment(Qt.AlignCenter)
+        self.label_dataset_page_info.setMinimumWidth(100)
+
+        self.btn_dataset_next = QPushButton('>')
+        self.btn_dataset_next.setMaximumWidth(40)
+        self.btn_dataset_next.clicked.connect(self.go_to_next_dataset_page)
+        self.btn_dataset_next.setEnabled(False)
+
+        self.btn_dataset_last = QPushButton('>>')
+        self.btn_dataset_last.setMaximumWidth(40)
+        self.btn_dataset_last.clicked.connect(self.go_to_last_dataset_page)
+        self.btn_dataset_last.setEnabled(False)
+
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_first)
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_prev)
+        self.dataset_pagination_layout.addWidget(self.label_dataset_page_info)
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_next)
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_last)
+
+        self.dataset_header_layout.addWidget(self.dataset_pagination_widget)
+        # Hidden by default; becomes visible when dataset has multiple pages
+        self.dataset_pagination_widget.setVisible(False)
+
+        self.dataset_preview_layout.addLayout(self.dataset_header_layout)
+
+        self.table_dataset_preview = QTableWidget()
+        self.table_dataset_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_dataset_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_dataset_preview.setAlternatingRowColors(True)
+        self.dataset_preview_layout.addWidget(self.table_dataset_preview)
+        self.trainLayout.addWidget(self.dataset_preview_frame)
+
+        # Small Labels preview table (shows label dataframe preview)
+        self.labels_preview_frame = QFrame()
+        self.labels_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.labels_preview_frame.setLineWidth(2)
+        self.labels_preview_layout = QVBoxLayout(self.labels_preview_frame)
+
+        self.label_labels_preview_header = QLabel("Labels preview:")
+        self.labels_preview_layout.addWidget(self.label_labels_preview_header)
+
+        self.table_labels_preview = QTableWidget()
+        self.table_labels_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_labels_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_labels_preview.setAlternatingRowColors(True)
+        # Make labels preview compact
+        self.table_labels_preview.setMinimumHeight(120)
+        self.labels_preview_layout.addWidget(self.table_labels_preview)
+
+        self.trainLayout.addWidget(self.labels_preview_frame)
+
+        # dataset paging state (keeps the full DataFrame in memory and renders
+        # only the current page to the table widget)
+        self._dataset_df = None
+        self._dataset_current_page = 0
+        self._dataset_rows_per_page = 500
+
         self.trainLayout.addStretch()
         # Add Train first
         self.tabWidget.addTab(self.tabTrain, "Train")
@@ -551,6 +738,102 @@ class MainWindow(QMainWindow):
             self._rejected_csv = file_path
             self.statusbar.showMessage(f"Rejected CSV selected", 2000)
 
+    # New: Features / Labels file selection and loading
+    def select_features_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select features CSV", "", "CSV Files (*.csv);;All files (*)")
+        if file_path:
+            self._features_path = file_path
+            self.features_path_label.setText(os.path.basename(file_path))
+            ext = os.path.splitext(file_path)[1].lower()
+            supported = ['.csv', '.tsv', '.tab', '.vot', '.votable', '.xml', '.tbl']
+            self.btn_load_features.setEnabled(ext in supported)
+
+    def select_labels_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select labels CSV", "", "CSV Files (*.csv);;All files (*)")
+        if file_path:
+            self._labels_path = file_path
+            self.labels_path_label.setText(os.path.basename(file_path))
+            ext = os.path.splitext(file_path)[1].lower()
+            supported = ['.csv', '.tsv', '.tab', '.vot', '.votable', '.xml', '.tbl']
+            self.btn_load_labels.setEnabled(ext in supported)
+
+    def load_features_clicked(self):
+        path = getattr(self, '_features_path', None)
+        if not path:
+            QMessageBox.warning(self, "No file", "No features file selected.")
+            return
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == '.csv':
+                df, status, msg = dataio.loadcsvfile(path)
+            elif ext in ['.tsv', '.tab']:
+                df, status, msg = dataio.loadtabseptable(path)
+            elif ext in ['.vot', '.votable', '.xml']:
+                df, status, msg = dataio.loadvotableable(path)
+            elif ext == '.tbl':
+                df, status, msg = dataio.loadipactable(path)
+            else:
+                df, status, msg = dataio.loadcsvfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Load error", f"Error calling data loader: {e}")
+            return
+
+        if status != 1 or df is None:
+            QMessageBox.critical(self, "Load failed", f"Failed to load features:\n{msg}")
+            return
+
+        self._features_df = df
+        self.statusbar.showMessage(f"Features loaded: {len(df)} rows", 2000)
+        # Use existing dataset preview for features
+        self.display_dataset_preview(df)
+
+    def load_labels_clicked(self):
+        path = getattr(self, '_labels_path', None)
+        if not path:
+            QMessageBox.warning(self, "No file", "No labels file selected.")
+            return
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == '.csv':
+                df, status, msg = dataio.loadcsvfile(path)
+            elif ext in ['.tsv', '.tab']:
+                df, status, msg = dataio.loadtabseptable(path)
+            elif ext in ['.vot', '.votable', '.xml']:
+                df, status, msg = dataio.loadvotableable(path)
+            elif ext == '.tbl':
+                df, status, msg = dataio.loadipactable(path)
+            else:
+                df, status, msg = dataio.loadcsvfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Load error", f"Error calling data loader: {e}")
+            return
+
+        if status != 1 or df is None:
+            QMessageBox.critical(self, "Load failed", f"Failed to load labels:\n{msg}")
+            return
+
+        self._labels_df = df
+        self.statusbar.showMessage(f"Labels loaded: {len(df)} rows", 2000)
+        self.display_labels_preview(df)
+
+    def display_labels_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
+        if dataframe is None or dataframe.empty:
+            self.table_labels_preview.setRowCount(0)
+            self.table_labels_preview.setColumnCount(0)
+            return
+
+        df = dataframe if len(dataframe) <= max_rows else dataframe.head(max_rows)
+        self.table_labels_preview.setRowCount(len(df))
+        self.table_labels_preview.setColumnCount(len(df.columns))
+        self.table_labels_preview.setHorizontalHeaderLabels(df.columns.tolist())
+
+        for i in range(len(df)):
+            for j, col in enumerate(df.columns):
+                item = QTableWidgetItem(str(df.iloc[i, j]))
+                self.table_labels_preview.setItem(i, j, item)
+
+        self.table_labels_preview.resizeColumnsToContents()
+
     def select_outdir(self):
         folder = QFileDialog.getExistingDirectory(self, "Select output directory", "")
         if folder:
@@ -568,6 +851,177 @@ class MainWindow(QMainWindow):
         # Emit signal to backend
         self.start_training_signal.emit(confirmed, rejected, outdir or '')
         self.statusbar.showMessage("Training started in background", 2000)
+
+    def get_rf_params(self):
+        """Return a dict with Random Forest parameters from the UI controls.
+
+        Conversions:
+        - max_depth: 0 -> None
+        - random_state: -1 -> None
+        - n_jobs: 0 -> None
+        """
+        try:
+            n_estimators = int(self.spin_n_estimators.value())
+            max_depth = int(self.spin_max_depth.value())
+            max_depth = None if max_depth == 0 else max_depth
+            random_state = int(self.spin_random_state.value())
+            random_state = None if random_state == -1 else random_state
+            n_jobs = int(self.spin_n_jobs.value())
+            n_jobs = None if n_jobs == 0 else n_jobs
+            return {
+                'n_estimators': n_estimators,
+                'max_depth': max_depth,
+                'random_state': random_state,
+                'n_jobs': n_jobs
+            }
+        except Exception:
+            # Fallback to sensible defaults
+            return {'n_estimators': 100, 'max_depth': None, 'random_state': None, 'n_jobs': 1}
+
+    # === Dataset upload handlers for Train tab ===
+    def select_dataset_file(self):
+        # Ask user for a dataset file path (supports multiple table formats)
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select dataset CSV", "", "CSV Files (*.csv);;All files (*)")
+        if not file_path:
+            return
+        self._dataset_path = file_path
+        self.dataset_path_label.setText(os.path.basename(file_path))
+        # Enable load button for supported types
+        ext = os.path.splitext(file_path)[1].lower()
+        supported = ['.csv', '.tsv', '.tab', '.vot', '.votable', '.xml', '.tbl']
+        if ext in supported:
+            self.btn_load_dataset.setEnabled(True)
+        else:
+            self.btn_load_dataset.setEnabled(False)
+            QMessageBox.warning(self, "Invalid file", "Please select a supported table file (CSV/TSV/VOTable/IPAC).")
+
+    def load_dataset_clicked(self):
+        """Load the selected dataset using analysis.dataio and preview it."""
+        path = getattr(self, '_dataset_path', None)
+        if not path:
+            QMessageBox.warning(self, "No file", "No dataset selected. Use 'Select Dataset' first.")
+            return
+
+    # Choose the appropriate loader in analysis.dataio based on extension.
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == '.csv':
+                df, status, msg = dataio.loadcsvfile(path)
+            elif ext in ['.tsv', '.tab']:
+                df, status, msg = dataio.loadtabseptable(path)
+            elif ext in ['.vot', '.votable', '.xml']:
+                df, status, msg = dataio.loadvotableable(path)
+            elif ext == '.tbl':
+                df, status, msg = dataio.loadipactable(path)
+            else:
+                # Fallback to CSV parser
+                df, status, msg = dataio.loadcsvfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Load error", f"Error calling data loader: {e}")
+            return
+
+        if status != 1 or df is None:
+            QMessageBox.critical(self, "Load failed", f"Failed to load dataset:\n{msg}")
+            return
+
+        # store DataFrame and show first page
+        self._dataset_df = df
+        self.statusbar.showMessage(f"Dataset loaded: {len(df)} rows", 2000)
+        self.display_dataset_preview(df)
+
+    def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
+        """Store the dataset and render page 0 into the preview table.
+
+        We keep the full DataFrame in memory (`self._dataset_df`) and only
+        render the current page to the QTableWidget for responsiveness.
+        """
+        if dataframe is None or dataframe.empty:
+            self._dataset_df = None
+            self.table_dataset_preview.setRowCount(0)
+            self.table_dataset_preview.setColumnCount(0)
+            self.dataset_pagination_widget.setVisible(False)
+            return
+
+        # store and initialize paging
+        self._dataset_df = dataframe.copy()
+        self._dataset_current_page = 0
+
+        total_rows = len(self._dataset_df)
+        total_pages = (total_rows + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+        if total_pages > 1:
+            self.dataset_pagination_widget.setVisible(True)
+        else:
+            self.dataset_pagination_widget.setVisible(False)
+
+        # load first page
+        self.load_current_dataset_page()
+
+    def load_current_dataset_page(self):
+        """Render current dataset page into the QTableWidget and update nav state."""
+        if self._dataset_df is None or self._dataset_df.empty:
+            return
+
+        total_rows = len(self._dataset_df)
+        total_pages = (total_rows + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+
+        start_row = self._dataset_current_page * self._dataset_rows_per_page
+        end_row = min(start_row + self._dataset_rows_per_page, total_rows)
+
+        page_data = self._dataset_df.iloc[start_row:end_row]
+
+        # Update header label
+        self.label_dataset_preview.setText(f"Dataset preview (Showing {start_row+1}-{end_row} of {total_rows})")
+
+        # Update page info
+        self.label_dataset_page_info.setText(f'Page {self._dataset_current_page + 1} of {total_pages}')
+
+        # Populate table
+        self.table_dataset_preview.setRowCount(len(page_data))
+        self.table_dataset_preview.setColumnCount(len(page_data.columns))
+        self.table_dataset_preview.setHorizontalHeaderLabels(page_data.columns.tolist())
+
+        for i in range(len(page_data)):
+            for j, col in enumerate(page_data.columns):
+                value = page_data.iloc[i, j]
+                item = QTableWidgetItem(str(value))
+                self.table_dataset_preview.setItem(i, j, item)
+
+        self.table_dataset_preview.resizeColumnsToContents()
+
+        # Update nav buttons
+        self.btn_dataset_first.setEnabled(self._dataset_current_page > 0)
+        self.btn_dataset_prev.setEnabled(self._dataset_current_page > 0)
+        self.btn_dataset_next.setEnabled(self._dataset_current_page < total_pages - 1)
+        self.btn_dataset_last.setEnabled(self._dataset_current_page < total_pages - 1)
+
+        # Make sure pagination widget visible state is consistent
+        self.dataset_pagination_widget.setVisible(total_pages > 1)
+
+    def go_to_first_dataset_page(self):
+        """Jump to first page and render it."""
+        self._dataset_current_page = 0
+        self.load_current_dataset_page()
+
+    def go_to_prev_dataset_page(self):
+        """Go one page back if possible."""
+        if self._dataset_current_page > 0:
+            self._dataset_current_page -= 1
+            self.load_current_dataset_page()
+
+    def go_to_next_dataset_page(self):
+        """Advance one page if not on the last page."""
+        if self._dataset_df is not None:
+            total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+            if self._dataset_current_page < total_pages - 1:
+                self._dataset_current_page += 1
+                self.load_current_dataset_page()
+
+    def go_to_last_dataset_page(self):
+        """Jump to the last page and render it."""
+        if self._dataset_df is not None:
+            total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+            self._dataset_current_page = total_pages - 1
+            self.load_current_dataset_page()
     
     def add_batch_info(self, batch_info: dict):
         item_text = f"Batch {batch_info['batch_id']}.  Length {batch_info['batch_length']}  Confirmed {batch_info['confirmed']}  Rejected {batch_info['rejected']}"
