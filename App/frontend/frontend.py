@@ -25,6 +25,90 @@ class DataLoaderThread(QThread):
         self.data_loaded.emit(subset, self.batch_id)
 
 
+class DatabaseSortThread(QThread):
+    """Thread para ordenar datos sin congelar la interfaz"""
+    sort_completed = pyqtSignal(pd.DataFrame)
+    
+    def __init__(self, dataframe, column, ascending):
+        super().__init__()
+        self.dataframe = dataframe.copy()
+        self.column = column
+        self.ascending = ascending
+    
+    def run(self):
+        try:
+            # Intentar conversión numérica si es posible
+            if self.dataframe[self.column].dtype == 'object':
+                try:
+                    temp_col = pd.to_numeric(self.dataframe[self.column], errors='coerce')
+                    if not temp_col.isna().all():
+                        sorted_indices = temp_col.argsort()
+                        self.dataframe = self.dataframe.iloc[sorted_indices]
+                        if not self.ascending:
+                            self.dataframe = self.dataframe.iloc[::-1]
+                    else:
+                        self.dataframe = self.dataframe.sort_values(by=self.column, ascending=self.ascending)
+                except:
+                    self.dataframe = self.dataframe.sort_values(by=self.column, ascending=self.ascending)
+            else:
+                self.dataframe = self.dataframe.sort_values(by=self.column, ascending=self.ascending)
+            
+            self.dataframe = self.dataframe.reset_index(drop=True)
+            self.sort_completed.emit(self.dataframe)
+        except Exception as e:
+            print(f"Error in sort thread: {e}")
+            self.sort_completed.emit(self.dataframe)
+
+
+class DatabaseSearchThread(QThread):
+    """Thread para buscar datos sin congelar la interfaz"""
+    search_completed = pyqtSignal(pd.DataFrame)
+    
+    def __init__(self, dataframe, column, search_text, sort_column=None, ascending=True):
+        super().__init__()
+        self.dataframe = dataframe.copy()
+        self.column = column
+        self.search_text = search_text
+        self.sort_column = sort_column
+        self.ascending = ascending
+    
+    def run(self):
+        try:
+            if self.search_text.strip() == "":
+                result = self.dataframe
+            else:
+                # Búsqueda case-insensitive
+                mask = self.dataframe[self.column].astype(str).str.contains(
+                    self.search_text, 
+                    case=False, 
+                    na=False
+                )
+                result = self.dataframe[mask].copy()
+            
+            # Aplicar ordenamiento si existe
+            if self.sort_column and self.sort_column in result.columns:
+                if result[self.sort_column].dtype == 'object':
+                    try:
+                        temp_col = pd.to_numeric(result[self.sort_column], errors='coerce')
+                        if not temp_col.isna().all():
+                            sorted_indices = temp_col.argsort()
+                            result = result.iloc[sorted_indices]
+                            if not self.ascending:
+                                result = result.iloc[::-1]
+                        else:
+                            result = result.sort_values(by=self.sort_column, ascending=self.ascending)
+                    except:
+                        result = result.sort_values(by=self.sort_column, ascending=self.ascending)
+                else:
+                    result = result.sort_values(by=self.sort_column, ascending=self.ascending)
+            
+            result = result.reset_index(drop=True)
+            self.search_completed.emit(result)
+        except Exception as e:
+            print(f"Error in search thread: {e}")
+            self.search_completed.emit(self.dataframe)
+
+
 class MainWindow(QMainWindow):
     load_csv_signal = pyqtSignal(str)
     remove_batch_signal = pyqtSignal(int)
@@ -48,6 +132,15 @@ class MainWindow(QMainWindow):
         self.current_db_page = 0
         self.current_sort_column = None
         self.current_sort_order = Qt.AscendingOrder
+        
+        # Threads para operaciones de base de datos
+        self.sort_thread = None
+        self.search_thread = None
+        
+        # Debounce timer para la búsqueda
+        self.search_timer = QtCore.QTimer()
+        self.search_timer.setSingleShot(True)
+        self.search_timer.timeout.connect(self.perform_search)
         
         self.setupUi()
         
@@ -273,6 +366,12 @@ class MainWindow(QMainWindow):
         self.btn_clear_search = QPushButton("Clear")
         self.btn_clear_search.clicked.connect(self.clear_search)
         self.search_sort_layout.addWidget(self.btn_clear_search)
+        
+        # Indicador de carga
+        self.label_loading = QLabel("⏳ Loading...")
+        self.label_loading.setStyleSheet("color: #FF6B35; font-weight: bold;")
+        self.label_loading.setVisible(False)
+        self.search_sort_layout.addWidget(self.label_loading)
         
         self.search_sort_layout.addStretch()
         
@@ -633,98 +732,120 @@ class MainWindow(QMainWindow):
         self.statusbar.showMessage(f"Loaded {len(dataframe)} records from {db_type} database", 2000)
     
     def sort_database(self, order: Qt.SortOrder):
-        """Ordena la base de datos por la columna seleccionada"""
+        """Ordena la base de datos por la columna seleccionada usando un thread"""
         if self.filtered_dataframe is None or self.combo_sort_column.currentText() == "":
+            return
+        
+        # Verificar si ya hay un thread corriendo
+        if self.sort_thread and self.sort_thread.isRunning():
             return
         
         column = self.combo_sort_column.currentText()
         self.current_sort_column = column
         self.current_sort_order = order
-        
-        # Ordenar el dataframe filtrado
         ascending = (order == Qt.AscendingOrder)
         
-        try:
-            # Intentar conversión numérica si es posible
-            if self.filtered_dataframe[column].dtype == 'object':
-                # Intentar convertir a numérico para ordenar correctamente
-                try:
-                    temp_col = pd.to_numeric(self.filtered_dataframe[column], errors='coerce')
-                    # Si la conversión fue exitosa (no todos son NaN), usar valores numéricos
-                    if not temp_col.isna().all():
-                        self.filtered_dataframe = self.filtered_dataframe.iloc[temp_col.argsort()]
-                        if not ascending:
-                            self.filtered_dataframe = self.filtered_dataframe.iloc[::-1]
-                    else:
-                        # Ordenar como string
-                        self.filtered_dataframe = self.filtered_dataframe.sort_values(by=column, ascending=ascending)
-                except:
-                    self.filtered_dataframe = self.filtered_dataframe.sort_values(by=column, ascending=ascending)
-            else:
-                self.filtered_dataframe = self.filtered_dataframe.sort_values(by=column, ascending=ascending)
-            
-            self.filtered_dataframe = self.filtered_dataframe.reset_index(drop=True)
-            self.current_db_page = 0
-            self.load_current_db_page()
-            
-            order_text = "ascending" if ascending else "descending"
-            self.statusbar.showMessage(f"Sorted by {column} ({order_text})", 2000)
-            
-        except Exception as e:
-            QMessageBox.warning(self, "Sort Error", f"Could not sort by {column}: {str(e)}")
+        # Mostrar indicador de carga
+        self.label_loading.setVisible(True)
+        self.disable_database_controls(True)
+        
+        # Crear y ejecutar thread de ordenamiento
+        self.sort_thread = DatabaseSortThread(self.filtered_dataframe, column, ascending)
+        self.sort_thread.sort_completed.connect(self.on_sort_completed)
+        self.sort_thread.start()
+    
+    def on_sort_completed(self, sorted_dataframe):
+        """Callback cuando el ordenamiento termina"""
+        self.filtered_dataframe = sorted_dataframe
+        self.current_db_page = 0
+        self.load_current_db_page()
+        
+        # Ocultar indicador de carga
+        self.label_loading.setVisible(False)
+        self.disable_database_controls(False)
+        
+        order_text = "ascending" if self.current_sort_order == Qt.AscendingOrder else "descending"
+        self.statusbar.showMessage(f"Sorted by {self.current_sort_column} ({order_text})", 2000)
     
     def on_search_text_changed(self):
-        """Se ejecuta cuando cambia el texto de búsqueda"""
+        """Se ejecuta cuando cambia el texto de búsqueda - usa debounce"""
+        # Detener el timer anterior y reiniciarlo
+        self.search_timer.stop()
+        self.search_timer.start(500)  # Espera 500ms después de que el usuario deje de escribir
+    
+    def perform_search(self):
+        """Ejecuta la búsqueda en un thread"""
         search_text = self.search_input.text().strip()
         
         if self.database_dataframe is None:
             return
         
-        if search_text == "":
-            # Si no hay búsqueda, mostrar todos los datos
-            self.filtered_dataframe = self.database_dataframe.copy()
-        else:
-            # Buscar en la columna seleccionada para sorting
-            if self.combo_sort_column.currentText() == "":
-                QMessageBox.warning(self, "Search Error", "Please select a column to sort by first")
-                return
-            
-            column = self.combo_sort_column.currentText()
-            
-            try:
-                # Búsqueda case-insensitive
-                mask = self.database_dataframe[column].astype(str).str.contains(
-                    search_text, 
-                    case=False, 
-                    na=False
-                )
-                self.filtered_dataframe = self.database_dataframe[mask].copy().reset_index(drop=True)
-                
-                # Mantener el ordenamiento actual si existe
-                if self.current_sort_column:
-                    ascending = (self.current_sort_order == Qt.AscendingOrder)
-                    self.filtered_dataframe = self.filtered_dataframe.sort_values(
-                        by=self.current_sort_column, 
-                        ascending=ascending
-                    ).reset_index(drop=True)
-                
-            except Exception as e:
-                QMessageBox.warning(self, "Search Error", f"Error searching: {str(e)}")
-                return
+        # Si ya hay un thread corriendo, esperar a que termine
+        if self.search_thread and self.search_thread.isRunning():
+            # En lugar de retornar, programar otra búsqueda
+            self.search_timer.start(200)
+            return
         
+        if search_text != "" and self.combo_sort_column.currentText() == "":
+            # No mostrar warning durante escritura, simplemente retornar
+            return
+        
+        # Mostrar indicador de carga solo si no estamos escribiendo activamente
+        # (el timer garantiza que el usuario ya dejó de escribir)
+        self.label_loading.setVisible(True)
+        
+        # NO deshabilitar controles para permitir escritura fluida
+        # self.disable_database_controls(True)
+        
+        column = self.combo_sort_column.currentText() if search_text != "" else None
+        ascending = (self.current_sort_order == Qt.AscendingOrder)
+        
+        # Crear y ejecutar thread de búsqueda
+        self.search_thread = DatabaseSearchThread(
+            self.database_dataframe, 
+            column if column else "", 
+            search_text,
+            self.current_sort_column,
+            ascending
+        )
+        self.search_thread.search_completed.connect(self.on_search_completed)
+        self.search_thread.start()
+    
+    def on_search_completed(self, result_dataframe):
+        """Callback cuando la búsqueda termina"""
+        self.filtered_dataframe = result_dataframe
         self.current_db_page = 0
         self.load_current_db_page()
         
+        # Ocultar indicador de carga
+        self.label_loading.setVisible(False)
+        # NO re-habilitar controles porque nunca los deshabilitamos
+        # self.disable_database_controls(False)
+        
+        search_text = self.search_input.text().strip()
         if search_text:
             self.statusbar.showMessage(
                 f"Found {len(self.filtered_dataframe)} results for '{search_text}'", 
                 2000
             )
+        else:
+            self.statusbar.showMessage(f"Showing all {len(self.filtered_dataframe)} records", 2000)
+    
+    def disable_database_controls(self, disable):
+        """Habilita/deshabilita controles durante procesamiento (solo para sort)"""
+        self.combo_db_selector.setEnabled(not disable)
+        self.btn_refresh_db.setEnabled(not disable)
+        self.combo_sort_column.setEnabled(not disable)
+        self.btn_sort_asc.setEnabled(not disable)
+        self.btn_sort_desc.setEnabled(not disable)
+        # NO deshabilitar search_input y btn_clear_search para mantener fluidez
+        # self.search_input.setEnabled(not disable)
+        # self.btn_clear_search.setEnabled(not disable)
     
     def clear_search(self):
         """Limpia la búsqueda"""
         self.search_input.clear()
-        self.on_search_text_changed()
+        # El timer se encargará de ejecutar perform_search
     
     def load_current_db_page(self):
         """Carga la página actual de la base de datos"""
