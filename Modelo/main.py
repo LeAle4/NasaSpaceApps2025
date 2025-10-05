@@ -32,7 +32,7 @@ LABEL_PATH = "data/non_candidates_processed_labels.csv"
 MODELOUT = "model.joblib"
 VIZOUT = "viz_out"
 TEST_SIZE = 0.4
-RANDOM_STATE = 69
+RANDOM_STATE = 420
 KFOLDDIV = 10  # number of folds for cross-validation
 
 RF_ESTIMATORS = 100
