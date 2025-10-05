@@ -565,7 +565,40 @@ class MainWindow(QMainWindow):
         self.save_to_database_signal.emit(item.data(Qt.UserRole))
         
     def start_prediction(self):
-        pass
+        """Start prediction for selected batch or all batches.
+
+        Emits `start_prediction_signal(batch_id)` for each batch to predict.
+        If no batch is selected, asks user whether to predict all loaded batches.
+        """
+        items_seleccionados = self.lista_archivos.selectedItems()
+        if items_seleccionados:
+            # Predict for selected (single-selection by UI config)
+            item = items_seleccionados[0]
+            batch_id = item.data(Qt.UserRole)
+            self.start_prediction_signal.emit(batch_id)
+            self.statusbar.showMessage(f"Prediction started for Batch {batch_id}", 2000)
+            return
+
+        # If nothing selected, offer to predict all loaded batches
+        if self.lista_archivos.count() == 0:
+            QMessageBox.information(self, "No batches", "No data batches loaded to predict.")
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Predict all?",
+            "No batch selected. Do you want to run prediction on all loaded batches?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            # iterate through all items and emit start signal for each
+            for i in range(self.lista_archivos.count()):
+                item = self.lista_archivos.item(i)
+                batch_id = item.data(Qt.UserRole)
+                self.start_prediction_signal.emit(batch_id)
+            self.statusbar.showMessage("Prediction started for all loaded batches", 2000)
 
     def show_msg(self, tipo, mensaje):
         if tipo == "success":
@@ -594,6 +627,41 @@ class MainWindow(QMainWindow):
         if items_seleccionados:
             batch_id = items_seleccionados[0].data(Qt.UserRole)
             self.request_batch_data_signal.emit(batch_id)
+
+    def on_prediction_progress(self, batch_id: int, status: str, message: str):
+        """Handle backend prediction progress updates.
+
+        status is one of: 'started', 'completed', 'error'.
+        """
+        # Find the list item for this batch
+        item = None
+        for i in range(self.lista_archivos.count()):
+            it = self.lista_archivos.item(i)
+            if it.data(Qt.UserRole) == batch_id:
+                item = it
+                break
+
+        if item is None:
+            return
+
+        if status == 'started':
+            item.setText(f"Batch {batch_id} - Processing...")
+            # disable controls to avoid double-starting
+            self.btn_start_prediction.setEnabled(False)
+            self.btn_save_to_db.setEnabled(False)
+        else:
+            # Completed or error - restore the text via batch_info or show error
+            if status == 'completed':
+                # Request the backend to re-send batch info which will update the item
+                # The existing flow will call add_batch_info when batch_info_signal is emitted
+                # Here we optimistically re-enable controls
+                self.btn_start_prediction.setEnabled(True)
+                self.btn_save_to_db.setEnabled(True)
+            elif status == 'error':
+                # show a brief message in statusbar
+                self.statusbar.showMessage(f"Prediction error for Batch {batch_id}: {message}", 5000)
+                self.btn_start_prediction.setEnabled(True)
+                self.btn_save_to_db.setEnabled(True)
     
     def display_batch_data(self, dataframe: pd.DataFrame, batch_id: int):
         """Muestra los datos del batch en la tabla con paginación"""

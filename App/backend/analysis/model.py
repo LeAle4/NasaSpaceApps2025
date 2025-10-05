@@ -18,7 +18,7 @@ from typing import Optional
 
 import pandas as pd
 import numpy as np
-import visualization
+from . import visualization
 import joblib
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance as _perm
@@ -26,7 +26,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix
 
 # Progress helpers: print timestamped stage/step messages
-import progress
+from . import progress
 
 class Model:
     """Light wrapper around a scikit-learn RandomForestClassifier.
@@ -320,7 +320,7 @@ def create_visualizations(results: dict, random_state: Optional[int] = None):
     # K-fold detailed per-metric results and plot
     try:
         progress.step("Computing per-fold metrics (k-fold)", verbosity=1)
-        from metrics import ten_fold_cross_validation
+        from .metrics import ten_fold_cross_validation
         rs_k = 42 if random_state is None else random_state
         kfold_results = ten_fold_cross_validation(clf, X, y, n_splits=10, random_state=rs_k)
         kf_graph, _ = visualization.plotkfold_results(kfold_results)
@@ -382,7 +382,7 @@ def compute_metrics(clf, X_train, X_test, y_train, y_test, compute_permutation: 
 
     # Prefer project-level evaluate_model if available (keeps output consistent)
     try:
-        from metrics import evaluate_model
+        from .metrics import evaluate_model
         progress.step("Using project evaluate_model implementation", verbosity=2)
         return evaluate_model(clf, X_train, X_test, y_train, y_test, compute_permutation=compute_permutation)
     except Exception:

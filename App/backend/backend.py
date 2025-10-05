@@ -1,11 +1,14 @@
 import pandas as pd
 import os
-from PyQt5.QtCore import pyqtSignal, QObject
+from PyQt5.QtCore import pyqtSignal, QObject, QThread
 from . import parameters as p
+from .analysis import model as model_wrapper
+from . import ml as ml_core
 
 class CurrentSesion(QObject):
     popup_msg_signal = pyqtSignal(str, str)
     batch_info_signal = pyqtSignal(dict)
+    prediction_progress_signal = pyqtSignal(int, str, str)  # batch_id, status, message
     batch_data_signal = pyqtSignal(pd.DataFrame, int)  # Señal para enviar datos del batch
     database_data_signal = pyqtSignal(pd.DataFrame, str)  # Nueva señal para enviar datos de la DB
     
@@ -13,7 +16,62 @@ class CurrentSesion(QObject):
         super().__init__()
         self.currentBatches = dict()
         self.database = None
+        # track running prediction threads
+        self._predict_threads = {}
         self.init_database()
+
+    class BatchPredictThread(QThread):
+        """Thread to run PredictionBatch.predictBatch without blocking the UI."""
+        finished_signal = pyqtSignal(str, str, int)  # status, message, batch_id
+
+        def __init__(self, batch: 'PredictionBatch'):
+            super().__init__()
+            self.batch = batch
+
+        def run(self):
+            try:
+                res = self.batch.predictBatch()
+                status, message = (res[0], res[1]) if isinstance(res, (list, tuple)) and len(res) >= 2 else ("error", "Unknown response")
+                self.finished_signal.emit(status, message, self.batch.id)
+            except Exception as e:
+                self.finished_signal.emit("error", str(e), self.batch.id)
+
+    def startPrediction(self, batch_id: int):
+        """Start prediction for a specific batch id in a background thread."""
+        if batch_id not in self.currentBatches:
+            self.popup_msg_signal.emit("error", f"Batch {batch_id} not found")
+            return
+
+        batch = self.currentBatches[batch_id]
+        # emit started progress so UI can show indicator
+        self.prediction_progress_signal.emit(batch_id, 'started', '')
+
+        thread = CurrentSesion.BatchPredictThread(batch)
+
+        def _on_done(status, message, bid):
+            # emit progress update
+            prog_status = 'completed' if status == 'success' else 'error'
+            self.prediction_progress_signal.emit(bid, prog_status, message)
+
+            # forward popup message
+            self.popup_msg_signal.emit(status, message)
+            # if success, update batch info in UI
+            if status == "success":
+                self.batch_info_signal.emit({
+                    "batch_id": bid,
+                    "batch_length": batch.batch_length,
+                    "confirmed": len(batch.confirmedExoplanets),
+                    "rejected": len(batch.rejectedExoplanets)
+                })
+            # cleanup
+            try:
+                del self._predict_threads[bid]
+            except KeyError:
+                pass
+
+        thread.finished_signal.connect(_on_done)
+        self._predict_threads[batch_id] = thread
+        thread.start()
     
     def newPredictionBatch(self, path):
         new_batch = PredictionBatch()
@@ -112,8 +170,35 @@ class PredictionBatch():
             #Take batch, predict everyting, actualizar los dataframes de confirmados y rechazados
             print("Error: No hay datos cargados. Ejecuta readCsvData() primero.")
             return ["error", "Error: No hay datos cargados. Ejecuta readCsvData() primero."]
-        
-        
+        # Delegate core prediction to ml.predict_batch while still allowing
+        # callers (the GUI / CurrentSesion) to pass app-level parameters.
+        try:
+            # model_path can be set on the batch instance to override discovery
+            model_path = getattr(self, 'model_path', None)
+            res = ml_core.predict_batch(
+                batch_df=self.batchDataFrame,
+                data_headers=p.DATA_HEADERS,
+                model_path=model_path,
+                fillna_value=0,
+                positive_class=1,
+            )
+
+            # assign results to batch attributes so the rest of the app works
+            self.lastPredictionResults = {
+                'model_path': res.get('model_path'),
+                'predictions': res.get('predictions'),
+                'probabilities': res.get('probabilities'),
+                'results_df': res.get('results_df'),
+            }
+            self.confirmedExoplanets = res.get('confirmed_df')
+            self.rejectedExoplanets = res.get('rejected_df')
+
+            print(f"Predicción completada: {len(self.confirmedExoplanets)} confirmados, {len(self.rejectedExoplanets)} rechazados")
+            return ["success", f"Predicción completada: {len(self.confirmedExoplanets)} confirmados, {len(self.rejectedExoplanets)} rechazados"]
+
+        except Exception as e:
+            print(f"Error durante la predicción: {e}")
+            return ["error", f"Error durante la predicción: {e}"]
         
         
 class Database():
