@@ -410,19 +410,6 @@ class MainWindow(QMainWindow):
         self.train_controls_layout.addWidget(self.btn_start_training)
 
         self.train_controls_layout.addStretch()
-
-        # Outdir selector + start button (features/labels based training)
-        self.btn_select_outdir = QPushButton('Select Output Dir')
-        self.btn_select_outdir.clicked.connect(self.select_outdir)
-        self.train_controls_layout.addWidget(self.btn_select_outdir)
-
-        self.btn_start_training = QPushButton('Start Training')
-        self.btn_start_training.clicked.connect(self.start_training_clicked)
-        # disabled until features and labels are loaded
-        self.btn_start_training.setEnabled(False)
-        self.train_controls_layout.addWidget(self.btn_start_training)
-
-        self.train_controls_layout.addStretch()
         self.trainLayout.addWidget(self.train_controls_frame)
 
         # Random Forest parameters
@@ -448,7 +435,7 @@ class MainWindow(QMainWindow):
         self.rf_params_layout.addWidget(self.label_max_depth)
         self.spin_max_depth = QSpinBox()
         self.spin_max_depth.setRange(-1, 1000)
-        self.spin_max_depth.setValue(0)
+        self.spin_max_depth.setValue(100)
         self.spin_max_depth.setToolTip("Maximum depth (0 means None)")
         self.spin_max_depth.setMinimumWidth(80)
         self.rf_params_layout.addWidget(self.spin_max_depth)
@@ -459,7 +446,7 @@ class MainWindow(QMainWindow):
         self.rf_params_layout.addWidget(self.label_random_state)
         self.spin_random_state = QSpinBox()
         self.spin_random_state.setRange(-1, 999999)
-        self.spin_random_state.setValue(-1)
+        self.spin_random_state.setValue(42)
         self.spin_random_state.setToolTip("Random seed (-1 means None)")
         self.spin_random_state.setMinimumWidth(80)
         self.rf_params_layout.addWidget(self.spin_random_state)
@@ -470,7 +457,7 @@ class MainWindow(QMainWindow):
         self.rf_params_layout.addWidget(self.label_n_jobs)
         self.spin_n_jobs = QSpinBox()
         self.spin_n_jobs.setRange(-1, 64)
-        self.spin_n_jobs.setValue(1)
+        self.spin_n_jobs.setValue(-1)
         self.spin_n_jobs.setToolTip("Parallel jobs (-1 use all cores)")
         self.spin_n_jobs.setMinimumWidth(80)
         self.rf_params_layout.addWidget(self.spin_n_jobs)
@@ -864,7 +851,7 @@ class MainWindow(QMainWindow):
             import traceback
             traceback.print_exc()
 
-    # ========== MÉTODOS ORIGINALES (PESTAÑA MODELO) ==========
+    # ========== MÉTODOS ORIGINALES (PESTAÑA MODEL PREDICTION) ==========
     
     def open_csv_batch(self):
         """Open a file dialog to select a CSV batch and perform basic validation."""

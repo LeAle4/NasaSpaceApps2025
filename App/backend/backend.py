@@ -227,13 +227,15 @@ class CurrentSesion(QObject):
         notification = new_batch.readCsvData(path)
         # notification is [status, message]
         self.popup_msg_signal.emit(notification[0], notification[1])
-        if notification[0] == "success":
+        if notification[0] == "success" or notification[0] == "warning":
             self.batch_info_signal.emit({
                 "batch_id": new_batch.id,
                 "batch_length": new_batch.batch_length,
                 "confirmed": len(new_batch.confirmedExoplanets) if new_batch.confirmedExoplanets is not None else 0,
                 "rejected": len(new_batch.rejectedExoplanets) if new_batch.rejectedExoplanets is not None else 0
             })
+        
+            
     
     def clearBatches(self):
         self.currentBatches.clear()
@@ -273,7 +275,10 @@ class CurrentSesion(QObject):
         if batch_id in self.currentBatches:
             batch = self.currentBatches[batch_id]
             if batch.batchDataFrame is not None:
-                self.batch_data_signal.emit(batch.batchDataFrame, batch.visualizationDataFrame, batch_id)
+                if batch.visualizationDataFrame is not None:
+                    self.batch_data_signal.emit(batch.batchDataFrame, batch.visualizationDataFrame, batch_id)
+                else:
+                    self.batch_data_signal.emit(batch.batchDataFrame, pd.DataFrame(), batch_id)
             else:
                 # Send empty DataFrame if no data is available
                 self.batch_data_signal.emit(pd.DataFrame(), pd.DataFrame(), batch_id)
@@ -352,16 +357,22 @@ class PredictionBatch():
             
         try:
             datafile = pd.read_csv(path, usecols=p.DATA_HEADERS)
-            visualData = pd.read_csv(path, usecols=p.DATA_VISUALIZATION)
             rows, cols = datafile.shape
             self.batch_length = rows
 
             if cols == len(p.DATA_HEADERS):
                 # Successful load: set DataFrame and report success
-                print(f"Loaded {rows} potential exoplanet candidates")
                 self.batchDataFrame = datafile
-                self.visualizationDataFrame = visualData
-                return ["success", f"Loaded {rows} potential exoplanet candidates"]
+                try:
+                    visualData = pd.read_csv(path, usecols=p.DATA_VISUALIZATION)
+                    self.visualizationDataFrame = visualData
+                    print(f"Loaded {rows} potential exoplanet candidates")
+                    return ["success", f"Loaded {rows} potential exoplanet candidates"]
+                except Exception as e:
+                    print(f"Warning: Failed to load visualization columns: {e}")
+                    self.visualizationDataFrame = None
+                    return ["warning", f"Failed to load visualization columns: {e}"]
+
             else:
                 # Column mismatch: provide a helpful diagnostic message
                 print(f"Error: required columns not found in CSV. Columns read: {cols}/{len(p.DATA_HEADERS)}")
@@ -373,6 +384,7 @@ class PredictionBatch():
             print(f"Error loading CSV: {e}")
             self.batchDataFrame = None
             return ["error", f"Error loading CSV: {e}"]
+        
     
     def predictBatch(self):
         #Este método es ejecutado después de cargar los datos. Ejecuta el modelo de predicción de exoplanetas y devuelve su veredicto.
