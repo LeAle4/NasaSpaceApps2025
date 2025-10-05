@@ -6,6 +6,7 @@ from PyQt5.QtCore import Qt, pyqtSignal, QThread
 from PyQt5.QtGui import *
 import pandas as pd
 import os
+from backend.analysis import dataio
 
 
 class DataLoaderThread(QThread):
@@ -319,6 +320,47 @@ class MainWindow(QMainWindow):
         self.labelTrain = QLabel("Training: configure training datasets and start training")
         self.labelTrain.setFont(QFont("Arial", 10, QFont.Bold))
         self.trainLayout.addWidget(self.labelTrain)
+        # --- Training dataset upload controls ---
+        self.train_controls_frame = QFrame()
+        self.train_controls_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.train_controls_frame.setLineWidth(2)
+        self.train_controls_layout = QHBoxLayout(self.train_controls_frame)
+
+        # Single dataset (CSV) selector
+        self.label_dataset = QLabel("Dataset (single CSV):")
+        self.train_controls_layout.addWidget(self.label_dataset)
+
+        self.dataset_path_label = QLabel("<no file selected>")
+        self.dataset_path_label.setMinimumWidth(300)
+        self.train_controls_layout.addWidget(self.dataset_path_label)
+
+        self.btn_select_dataset = QPushButton('Select Dataset')
+        self.btn_select_dataset.clicked.connect(self.select_dataset_file)
+        self.train_controls_layout.addWidget(self.btn_select_dataset)
+
+        self.btn_load_dataset = QPushButton('Load Dataset')
+        self.btn_load_dataset.clicked.connect(self.load_dataset_clicked)
+        self.btn_load_dataset.setEnabled(False)
+        self.train_controls_layout.addWidget(self.btn_load_dataset)
+
+        self.train_controls_layout.addStretch()
+
+        self.trainLayout.addWidget(self.train_controls_frame)
+
+        # Preview table for the uploaded dataset
+        self.dataset_preview_frame = QFrame()
+        self.dataset_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dataset_preview_frame.setLineWidth(2)
+        self.dataset_preview_layout = QVBoxLayout(self.dataset_preview_frame)
+        self.label_dataset_preview = QLabel("Dataset preview:")
+        self.dataset_preview_layout.addWidget(self.label_dataset_preview)
+        self.table_dataset_preview = QTableWidget()
+        self.table_dataset_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_dataset_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_dataset_preview.setAlternatingRowColors(True)
+        self.dataset_preview_layout.addWidget(self.table_dataset_preview)
+        self.trainLayout.addWidget(self.dataset_preview_frame)
+
         self.trainLayout.addStretch()
         # Add Train first
         self.tabWidget.addTab(self.tabTrain, "Train")
@@ -568,6 +610,76 @@ class MainWindow(QMainWindow):
         # Emit signal to backend
         self.start_training_signal.emit(confirmed, rejected, outdir or '')
         self.statusbar.showMessage("Training started in background", 2000)
+
+    # === Dataset upload handlers for Train tab ===
+    def select_dataset_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select dataset CSV", "", "CSV Files (*.csv);;All files (*)")
+        if not file_path:
+            return
+        self._dataset_path = file_path
+        self.dataset_path_label.setText(os.path.basename(file_path))
+        # Enable load button for supported types
+        ext = os.path.splitext(file_path)[1].lower()
+        supported = ['.csv', '.tsv', '.tab', '.vot', '.votable', '.xml', '.tbl']
+        if ext in supported:
+            self.btn_load_dataset.setEnabled(True)
+        else:
+            self.btn_load_dataset.setEnabled(False)
+            QMessageBox.warning(self, "Invalid file", "Please select a supported table file (CSV/TSV/VOTable/IPAC).")
+
+    def load_dataset_clicked(self):
+        """Load the selected dataset using analysis.dataio and preview it."""
+        path = getattr(self, '_dataset_path', None)
+        if not path:
+            QMessageBox.warning(self, "No file", "No dataset selected. Use 'Select Dataset' first.")
+            return
+
+        # Use dataio loader which returns (df, status, errmsg)
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == '.csv':
+                df, status, msg = dataio.loadcsvfile(path)
+            elif ext in ['.tsv', '.tab']:
+                df, status, msg = dataio.loadtabseptable(path)
+            elif ext in ['.vot', '.votable', '.xml']:
+                df, status, msg = dataio.loadvotableable(path)
+            elif ext == '.tbl':
+                df, status, msg = dataio.loadipactable(path)
+            else:
+                # Fallback to CSV parser
+                df, status, msg = dataio.loadcsvfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Load error", f"Error calling data loader: {e}")
+            return
+
+        if status != 1 or df is None:
+            QMessageBox.critical(self, "Load failed", f"Failed to load dataset:\n{msg}")
+            return
+
+        # Keep a reference for later training
+        self._dataset_df = df
+        self.statusbar.showMessage(f"Dataset loaded: {len(df)} rows", 2000)
+        self.display_dataset_preview(df)
+
+    def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
+        """Show the first `max_rows` rows of the dataset in the preview table."""
+        if dataframe is None or dataframe.empty:
+            self.table_dataset_preview.setRowCount(0)
+            self.table_dataset_preview.setColumnCount(0)
+            return
+
+        df = dataframe.head(max_rows)
+        self.table_dataset_preview.setRowCount(len(df))
+        self.table_dataset_preview.setColumnCount(len(df.columns))
+        self.table_dataset_preview.setHorizontalHeaderLabels(df.columns.tolist())
+
+        for i in range(len(df)):
+            for j, col in enumerate(df.columns):
+                value = df.iloc[i, j]
+                item = QTableWidgetItem(str(value))
+                self.table_dataset_preview.setItem(i, j, item)
+
+        self.table_dataset_preview.resizeColumnsToContents()
     
     def add_batch_info(self, batch_info: dict):
         item_text = f"Batch {batch_info['batch_id']}.  Length {batch_info['batch_length']}  Confirmed {batch_info['confirmed']}  Rejected {batch_info['rejected']}"
