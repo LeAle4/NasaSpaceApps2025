@@ -312,7 +312,72 @@ def create_solar_system_planets(parent_scene, scale):
         
     return planet_objects
 
-def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
+def create_habitable_zone(parent_scene, scale, inner_au, outer_au, exoplanet_incl_deg):
+    """Create two 2D habitable zone annuli (rings):
+        1. Base system plane (z=0) representing Solar System reference plane.
+        2. Exoplanet orbital plane inclined by exoplanet_incl_deg about the X axis.
+
+    Each ring has inner/outer boundary lines plus a translucent fill mesh.
+    Returns dict of visuals for toggling visibility.
+    """
+    inner_r = inner_au * AU * scale
+    outer_r = outer_au * AU * scale
+    if outer_r < inner_r:
+        inner_r, outer_r = outer_r, inner_r
+
+    segments = 256
+    ang = np.linspace(0, 2*np.pi, segments, endpoint=True)
+    base_inner = np.stack([inner_r*np.cos(ang), inner_r*np.sin(ang), np.zeros_like(ang)], axis=1)
+    base_outer = np.stack([outer_r*np.cos(ang), outer_r*np.sin(ang), np.zeros_like(ang)], axis=1)
+
+    # Function to build annulus mesh faces between two rings
+    def build_annulus_mesh(inner_pts, outer_pts):
+        verts = np.vstack([inner_pts, outer_pts])
+        faces = []
+        n = inner_pts.shape[0]
+        for i in range(n - 1):
+            a = i
+            b = i + 1
+            c = i + n
+            d = i + 1 + n
+            faces.append([a, c, b])
+            faces.append([b, c, d])
+        # close loop
+        a = n - 1; b = 0; c = a + n; d = n
+        faces.append([a, c, b])
+        faces.append([b, c, d])
+        return verts, np.array(faces, dtype=np.uint32)
+
+    # Base plane visuals
+    base_inner_line = scene.visuals.Line(pos=base_inner, color=(0.25, 0.95, 0.25, 0.85), width=2, parent=parent_scene)
+    base_outer_line = scene.visuals.Line(pos=base_outer, color=(0.15, 0.7, 0.2, 0.6), width=2, parent=parent_scene)
+    v_base, f_base = build_annulus_mesh(base_inner, base_outer)
+    base_mesh = scene.visuals.Mesh(vertices=v_base, faces=f_base, color=(0.2, 0.8, 0.3, 0.12), parent=parent_scene)
+    base_mesh.set_gl_state(depth_test=False, blend=True)
+    base_mesh.order = -55
+
+    # Inclined plane: rotate points about X axis by exoplanet inclination
+    incl_rad = np.deg2rad(exoplanet_incl_deg)
+    R_incl = rotation_matrix_x(incl_rad)
+    incl_inner = (R_incl @ base_inner.T).T
+    incl_outer = (R_incl @ base_outer.T).T
+    incl_inner_line = scene.visuals.Line(pos=incl_inner, color=(0.3, 0.6, 1.0, 0.9), width=2, parent=parent_scene)
+    incl_outer_line = scene.visuals.Line(pos=incl_outer, color=(0.2, 0.45, 0.9, 0.6), width=2, parent=parent_scene)
+    v_incl, f_incl = build_annulus_mesh(incl_inner, incl_outer)
+    incl_mesh = scene.visuals.Mesh(vertices=v_incl, faces=f_incl, color=(0.25, 0.5, 1.0, 0.10), parent=parent_scene)
+    incl_mesh.set_gl_state(depth_test=False, blend=True)
+    incl_mesh.order = -54
+
+    return {
+        'base_inner_line': base_inner_line,
+        'base_outer_line': base_outer_line,
+        'base_mesh': base_mesh,
+        'incl_inner_line': incl_inner_line,
+        'incl_outer_line': incl_outer_line,
+        'incl_mesh': incl_mesh
+    }
+
+def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False):
     row = df.loc[row_index] if row_index in df.index else df.iloc[row_index]
 
     # KOI data
@@ -328,6 +393,13 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
     planet_r_m = float(row.get('koi_prad',1.0) or 1.0)*R_EARTH
     teff = float(row.get('koi_steff',5778.0) or 5778.0)
     star_rgb = temp_to_rgb(teff)
+    # --- Habitable zone estimation ---
+    star_radius_rel = (star_r_m / R_SUN)
+    star_temp_rel = (teff / 5778.0)
+    luminosity_rel = (star_radius_rel ** 2) * (star_temp_rel ** 4)
+    inner_hz_au = np.sqrt(luminosity_rel / 1.1)
+    outer_hz_au = np.sqrt(luminosity_rel / 0.53)
+    # ---------------------------------------------------------------
 
     # Automatic scaling
     scale = 1.0 / (1.5 * a_m)
@@ -474,6 +546,22 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
     
     solar_system_checkbox.stateChanged.connect(on_solar_system_toggle)
     controls_layout.addWidget(solar_system_checkbox)
+
+    # Habitable Zone checkbox
+    habitable_zone_checkbox = QCheckBox("Habitable Zone")
+    habitable_zone_checkbox.setChecked(show_habitable_zone)
+
+    def on_hz_toggle(checked):
+        nonlocal habitable_zone_objects, show_habitable_zone
+        show_habitable_zone = checked
+        if checked and habitable_zone_objects is None:
+            print("Creating habitable zone visuals...")
+            habitable_zone_objects = create_habitable_zone(view.scene, scale, inner_hz_au, outer_hz_au, i_deg)
+        elif habitable_zone_objects is not None:
+            for v in habitable_zone_objects.values():
+                v.visible = checked
+    habitable_zone_checkbox.stateChanged.connect(on_hz_toggle)
+    controls_layout.addWidget(habitable_zone_checkbox)
     # Size to content (position later)
     controls_frame.adjustSize()
     controls_frame.show()
@@ -571,10 +659,14 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
 
     # Initialize solar system planets (create if initially enabled)
     solar_system_planets = {}
+    habitable_zone_objects = None
     if show_solar_system:
         print("Adding solar system planets...")
         # Use the SAME scale as the exoplanet system for spatial consistency
         solar_system_planets = create_solar_system_planets(view.scene, scale)
+    if show_habitable_zone:
+        print(f"Adding habitable zone: {inner_hz_au:.2f}-{outer_hz_au:.2f} AU (L={luminosity_rel:.2f} Lsun)")
+        habitable_zone_objects = create_habitable_zone(view.scene, scale, inner_hz_au, outer_hz_au, i_deg)
 
     # Camera distance with maximum zoom-out limit to keep stars as backdrop
     maxr = np.max(np.linalg.norm(path_units,axis=1))
@@ -679,20 +771,22 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
         for name, planet_obj in solar_system_planets.items():
             data = planet_obj['data']
             print(f"  {name}: {data['distance_from_star']:.1f} AU, Period: {data['period']/DAY:.0f} days")
+    if show_habitable_zone:
+        print(f"Habitable Zone: {inner_hz_au:.2f}-{outer_hz_au:.2f} AU (Luminosity {luminosity_rel:.2f} Lsun)")
     
-    print("Visual effects: multi-layer glowing star, atmospheric planet, starfield background")
+    print("Visual effects: multi-layer glowing star, atmospheric planet, habitable zone annulus, starfield background")
     print("Controls: Mouse drag to rotate, scroll to zoom")
     app.run()
 
-def create_instance(df, row_index=0, speed=1.0, show_solar_system=False):
-    render_koi_orbit(df, row_index=row_index, speed=speed, show_solar_system=show_solar_system)
+def create_instance(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False):
+    render_koi_orbit(df, row_index=row_index, speed=speed, show_solar_system=show_solar_system, show_habitable_zone=show_habitable_zone)
 
 # Example usage
 if __name__=='__main__':
     sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
-              'koi_smass':0.919,'koi_srad':0.927,'koi_prad':1.00,'koi_sma':0.2734,
-              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':10778.0}
+              'koi_smass':1.0,'koi_srad':1.0,'koi_prad':1.00,'koi_sma':0.2734,
+              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
     df_sample = pd.DataFrame([sample])
     
 
-    render_koi_orbit(df_sample, row_index=0, speed=5.0, show_solar_system=True)
+    render_koi_orbit(df_sample, row_index=0, speed=5.0, show_solar_system=True, show_habitable_zone=True)
