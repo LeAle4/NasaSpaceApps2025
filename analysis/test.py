@@ -137,5 +137,4 @@ def run_pipeline(
 
 if __name__ == '__main__':
 	# Lightweight smoke-run: don't compute expensive permutation by default
-	run_pipeline(compute_permutation=True)
-
+	run_pipeline(feature_csv=FEATURE_PATH, label_csv=LABEL_PATH, model_out=MODELOUT, viz_out=VIZOUT, compute_permutation=True, random_state=RANDOM_STATE)
