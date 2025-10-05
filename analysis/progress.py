@@ -1,20 +1,15 @@
 """Simple progress logging helpers for training scripts.
 
-Provide small helpers to print timestamped stage/step messages and optionally
-write them to a log file inside the `Modelo` folder. The API is intentionally
-small so it can be imported and used in existing scripts without changing
-behavior when not in verbose mode.
+This module provides tiny helpers used by the pipeline to print staged and
+step-level messages with timestamps. It also optionally appends those
+messages to a local `training_progress.log` file for post-run inspection.
 
-Functions:
-- stage(name, msg=None): Print a high-level stage header.
-- step(msg): Print a step-level message.
-- get_logger(name): (future) placeholder for extension.
-
-Usage:
-    from Modelo.progress import stage, step
-    stage("data_load", "Loading CSV files")
-    step("Reading parameters.csv into DataFrame")
-
+Design notes:
+- The API is intentionally minimal: consumers call `stage(...)` to mark a
+    high-level phase and `step(...)` for smaller steps. Verbosity is globally
+    controlled via the `VERBOSITY` variable.
+- The functions prefer to avoid raising exceptions when logging fails; file
+    writes are wrapped in try/except to keep training runs robust.
 """
 from datetime import datetime
 import os
@@ -63,6 +58,7 @@ def stage(name: str, msg: Optional[str] = None, to_file: bool = True, verbosity:
     if details and v >= 2:
         try:
             # pretty-print details in a compact way
+            # iterate in deterministic order when dict-like
             for k, val in (details.items() if isinstance(details, dict) else []):
                 line = f"[{_timestamp()}]   * {k}: {val}"
                 if v >= 2:

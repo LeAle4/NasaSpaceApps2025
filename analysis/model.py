@@ -74,6 +74,18 @@ class Model:
         return self
 
     def predict(self, X):
+        """Return predicted class labels for X.
+
+        Parameters
+        ----------
+        X : array-like
+            Samples to predict.
+
+        Returns
+        -------
+        array-like
+            Predicted labels produced by the underlying estimator.
+        """
         return self.model.predict(X)
 
     def predict_proba(self, X):
@@ -82,12 +94,23 @@ class Model:
         raise AttributeError("Underlying estimator has no 'predict_proba' method")
 
     def decision_function(self, X):
+        """Call the underlying estimator's decision_function if available.
+
+        Many scikit-learn estimators provide `decision_function` for scoring
+        (e.g., SVMs). If the wrapped estimator doesn't implement it this
+        method raises AttributeError to make the absence explicit.
+        """
         df = getattr(self.model, "decision_function", None)
         if callable(df):
             return df(X)
         raise AttributeError("Underlying estimator has no 'decision_function' method")
 
     def score(self, X, y):
+        """Return the default estimator score on the given test data and labels.
+
+        This delegates to the underlying estimator's `score` method which
+        commonly returns accuracy for classifiers.
+        """
         return self.model.score(X, y)
 
     def get_scores(self, X):
@@ -188,6 +211,11 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
         dict containing keys: wrapper, clf, X_train, X_test, y_train, y_test,
         y_pred, cm, train_acc, test_acc, labels, y_score
     """
+    # Parameters (brief):
+    # - X, y: feature matrix and label vector (pandas or numpy)
+    # - params: parameters forwarded to RandomForestClassifier (e.g. n_estimators)
+    # - random_state: integer seed used for splitting and model initialization
+    # - test_size: fraction of data to reserve for testing
     params = params or {}
 
     progress.stage("training", "Starting model training")
@@ -197,8 +225,9 @@ def train_save_model(X, y, params: Optional[dict] = None, random_state: Optional
     # Create Model wrapper and perform stratified train/test split
     wrapper = Model(params=params, random_state=random_state)
 
-    progress.step("Splitting data into train and test sets", verbosity=1, details={"test_size": test_size, "random_state": rs})
+    # Resolve random state used for splitting and logging
     rs = 42 if random_state is None else random_state
+    progress.step("Splitting data into train and test sets", verbosity=1, details={"test_size": test_size, "random_state": rs})
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, random_state=rs, stratify=y
     )
@@ -330,7 +359,7 @@ def create_visualizations(results: dict, random_state: Optional[int] = None):
     return graphs
 
 
-def compute_and_save_metrics(clf, X_train, X_test, y_train, y_test, compute_permutation: bool = False, random_state: Optional[int] = None):
+def compute_metrics(clf, X_train, X_test, y_train, y_test, compute_permutation: bool = False, random_state: Optional[int] = None):
     """Compute a comprehensive set of evaluation metrics and save them to disk.
 
     This helper prefers the project's `metrics.evaluate_model` function when

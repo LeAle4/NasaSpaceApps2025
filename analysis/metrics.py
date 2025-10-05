@@ -1,14 +1,23 @@
 """Condensed metrics helpers for classifier evaluation.
 
-This module provides two small utilities:
-- evaluate_model: compute standard metrics and (optionally) permutation
-  importances and a learning curve.
-- ten_fold_cross_validation: run stratified k-fold CV and return per-fold
-  accuracy/precision/recall/f1 arrays.
+This module provides a compact set of utilities used by the analysis pipeline
+to compute evaluation metrics and to run a quick stratified k-fold
+cross-validation. The helpers return plain Python types (lists/dicts) where
+possible so their outputs are JSON-serializable and easy to persist.
 
-The implementation below is intentionally compact and makes reasonable
-assumptions about inputs (fitted estimators, aligned arrays). It focuses on
-clarity rather than exhaustive defensive coding.
+Key functions:
+- evaluate_model(estimator, X_train, X_test, y_train, y_test, ...)
+    Returns a dict of scalar metrics and optional objects for permutation
+    importance and learning curves.
+
+- ten_fold_cross_validation(estimator, X, y, ...)
+    Runs stratified k-fold CV and returns numpy arrays per metric.
+
+Notes
+-----
+The functions prioritize clarity and typical use cases. They intentionally
+avoid aggressive defensive coding to keep the code readable; callers should
+pass aligned arrays/dataframes and a fitted estimator where expected.
 """
 
 from typing import Dict, Any
@@ -70,6 +79,9 @@ def evaluate_model(
     Returns a dict with scalar metrics and optional objects under keys
     'permutation_importance' and 'learning_curve' when requested.
     """
+    # The returned dict is intentionally JSON-friendly: numpy arrays are
+    # converted to Python lists where appropriate and optional sections are
+    # omitted if they cannot be computed.
     results: Dict[str, Any] = {}
 
     # Basic predictions

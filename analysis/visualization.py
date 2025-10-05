@@ -110,19 +110,7 @@ def plot_cv_scores(scores, ax: Optional[plt.Axes] = None):
         fig, ax = plt.subplots(figsize=(6, 4))
     # Boxplot with individual points jittered and mean annotation
     bp = ax.boxplot(scores, notch=False, patch_artist=True, widths=0.4)
-    # style boxes if present (matplotlib returns artists when using patch_artist)
-    if 'boxes' in bp:
-        for patch in bp['boxes']:
-            if hasattr(patch, 'set_facecolor'):
-                try:
-                    patch.set_facecolor(DEFAULT_PALETTE[1])
-                except Exception:
-                    pass
-            if hasattr(patch, 'set_alpha'):
-                try:
-                    patch.set_alpha(0.6)
-                except Exception:
-                    pass
+    # Use matplotlib defaults for box styling; keep jittered points for detail
     # jittered points
     jitter = (np.random.rand(len(scores)) - 0.5) * 0.12
     ax.scatter(np.ones_like(scores) + jitter, scores, color='black', alpha=0.75, s=20)
@@ -215,6 +203,24 @@ def plot_train_test_accuracy(train_acc: float, test_acc: float, ax: Optional[plt
 
 
 def compute_cv_scores(estimator, X, y, cv: int = 10, scoring: str = 'accuracy'):
+    """Compute cross-validation scores using sklearn.cross_val_score.
+
+    Parameters
+    ----------
+    estimator : estimator object
+        Fitted or unfitted estimator compatible with sklearn API.
+    X, y : array-like
+        Data used for cross-validation.
+    cv : int
+        Number of folds.
+    scoring : str
+        Scoring metric to pass to cross_val_score.
+
+    Returns
+    -------
+    numpy.ndarray
+        1-D array of cross-validation scores.
+    """
     return cross_val_score(estimator, X, y, cv=cv, scoring=scoring, n_jobs=-1)
 
 
@@ -326,7 +332,19 @@ def compute_brier_score(y_true, y_prob, pos_label=1):
 
 
 def plotkfold_results(results: Mapping[str, np.ndarray]):
-    """2x2 plot of per-fold metrics returned by ten_fold_cross_validation."""
+    """2x2 plot of per-fold metrics returned by ten_fold_cross_validation.
+
+    Parameters
+    ----------
+    results : Mapping[str, numpy.ndarray]
+        Mapping expected to contain arrays for keys 'accuracy', 'precision',
+        'recall', and 'f1'. Each array should have length equal to number of folds.
+
+    Returns
+    -------
+    (Graph, numpy.ndarray)
+        A Graph wrapping the figure and the flattened axes array.
+    """
     metrics = ["accuracy", "precision", "recall", "f1"]
     fig, axes = plt.subplots(2, 2, figsize=(10, 8))
     axes = axes.ravel()
@@ -336,12 +354,11 @@ def plotkfold_results(results: Mapping[str, np.ndarray]):
         if vals.size == 0:
             ax.axis('off')
             continue
-        # Plot only per-fold points and a summary band (mean ± std).
+        # Plot per-fold points and a mean ± std band.
         x = np.arange(1, len(vals) + 1)
-        ax.scatter(x, vals, color=DEFAULT_PALETTE[0], edgecolor='k', zorder=3)
+        ax.scatter(x, vals, color=DEFAULT_PALETTE[0], edgecolor='k', zorder=3, s=40)
         mean = float(np.mean(vals))
         std = float(np.std(vals))
-        # shaded band for mean +/- std
         ax.fill_between([0.5, len(vals) + 0.5], mean - std, mean + std, color=DEFAULT_PALETTE[0], alpha=0.12)
         ax.hlines(mean, xmin=0.5, xmax=len(vals) + 0.5, colors=DEFAULT_PALETTE[0], linestyles='--', label=f'mean={mean:.3f}')
         ax.set_xlim(0.5, len(vals) + 0.5)
@@ -349,9 +366,10 @@ def plotkfold_results(results: Mapping[str, np.ndarray]):
         ax.set_ylabel(metric.capitalize())
         ax.set_title(f"{metric.capitalize()} per fold (mean={mean:.3f}, std={std:.3f})")
         ax.grid(axis='y', alpha=0.25)
-        # annotate each point with its value (small font)
-        for xi, yi in zip(x, vals):
-            ax.text(xi, yi + 0.005, f"{yi:.3f}", ha='center', va='bottom', fontsize=7)
+        # Slight padding so markers don't touch the axis bounds
+        y_min, y_max = ax.get_ylim()
+        pad = max(0.02, 0.05 * (y_max - y_min))
+        ax.set_ylim(y_min, 1)
     return Graph.from_figure(fig), axes
 
 
