@@ -244,33 +244,6 @@ class MainWindow(QMainWindow):
         
         self.modelosLayout.addWidget(self.batch_files_frame)
 
-        # ===== Training from database controls =====
-        self.train_frame = QFrame()
-        self.train_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-        self.train_frame.setLineWidth(1)
-        self.train_layout = QHBoxLayout(self.train_frame)
-
-        self.label_train = QLabel("Train model from database:")
-        self.train_layout.addWidget(self.label_train)
-
-        self.btn_select_confirmed = QPushButton('Select Confirmed CSV')
-        self.btn_select_confirmed.clicked.connect(self.select_confirmed_csv)
-        self.train_layout.addWidget(self.btn_select_confirmed)
-
-        self.btn_select_rejected = QPushButton('Select Rejected CSV')
-        self.btn_select_rejected.clicked.connect(self.select_rejected_csv)
-        self.train_layout.addWidget(self.btn_select_rejected)
-
-        self.btn_select_outdir = QPushButton('Output Folder')
-        self.btn_select_outdir.clicked.connect(self.select_outdir)
-        self.train_layout.addWidget(self.btn_select_outdir)
-
-        self.btn_start_training = QPushButton('Start Training')
-        self.btn_start_training.clicked.connect(self.start_training_clicked)
-        self.train_layout.addWidget(self.btn_start_training)
-
-        self.modelosLayout.addWidget(self.train_frame)
-        
         # Frame para mostrar datos del batch seleccionado
         self.data_viewer_frame = QFrame()
         self.data_viewer_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
@@ -339,7 +312,19 @@ class MainWindow(QMainWindow):
         
         self.modelosLayout.addWidget(self.data_viewer_frame)
         
-        self.tabWidget.addTab(self.tabModelos, "Model")
+        # ========== PESTAÑA DE TRAIN (NEW) ==========
+        self.tabTrain = QWidget()
+        self.tabTrain.setObjectName("tabTrain")
+        self.trainLayout = QVBoxLayout(self.tabTrain)
+        self.labelTrain = QLabel("Training: configure training datasets and start training")
+        self.labelTrain.setFont(QFont("Arial", 10, QFont.Bold))
+        self.trainLayout.addWidget(self.labelTrain)
+        self.trainLayout.addStretch()
+        # Add Train first
+        self.tabWidget.addTab(self.tabTrain, "Train")
+
+        # Rename 'Model' tab to 'Evaluation' (added after Train)
+        self.tabWidget.addTab(self.tabModelos, "Evaluation")
         
         # ========== PESTAÑA DE DATOS (DATABASE) ==========
         self.tabDatos = QWidget()
@@ -488,7 +473,8 @@ class MainWindow(QMainWindow):
         
         self.datosLayout.addWidget(self.db_viewer_frame)
         
-        self.tabWidget.addTab(self.tabDatos, "Data")
+        # Rename 'Data' tab to 'Visualize'
+        self.tabWidget.addTab(self.tabDatos, "Visualize")
         
         # Agregar el TabWidget al layout principal
         self.mainLayout.addWidget(self.tabWidget)
