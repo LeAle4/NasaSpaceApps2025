@@ -158,45 +158,45 @@ def create_glowing_star(radius, temperature, parent_scene):
                               color=star_color + (1.0,))
     core_star.transform = scene.transforms.MatrixTransform()
     
-    # Create multiple glow layers for realistic effect
+    # Create multiple glow layers for realistic effect - REDUCED sizes to avoid covering planets
     glow_layers = []
     
-    # Inner glow - bright, star-colored
-    inner_glow = visuals.Sphere(radius=radius * 1.3,
+    # Inner glow - bright, star-colored (reduced from 1.3 to 1.1)
+    inner_glow = visuals.Sphere(radius=radius * 1.1,
                                parent=parent_scene,
                                method='latitude',
                                subdivisions=32,
-                               color=star_color + (0.6 * temp_factor,))
+                               color=star_color + (0.4 * temp_factor,))  # Reduced opacity
     inner_glow.transform = scene.transforms.MatrixTransform()
     glow_layers.append(inner_glow)
     
-    # Middle glow - softer, slightly cooler color
+    # Middle glow - softer, slightly cooler color (reduced from 1.8 to 1.3)
     middle_color = np.array(star_color) * 0.8 + np.array([0.2, 0.2, 0.3]) * 0.2
-    middle_glow = visuals.Sphere(radius=radius * 1.8,
+    middle_glow = visuals.Sphere(radius=radius * 1.3,
                                 parent=parent_scene,
                                 method='latitude',
                                 subdivisions=24,
-                                color=tuple(middle_color) + (0.3 * temp_factor,))
+                                color=tuple(middle_color) + (0.2 * temp_factor,))  # Reduced opacity
     middle_glow.transform = scene.transforms.MatrixTransform()
     glow_layers.append(middle_glow)
     
-    # Outer corona - very soft, cooler
+    # Outer corona - very soft, cooler (reduced from 2.5 to 1.6)
     corona_color = np.array(star_color) * 0.6 + np.array([0.3, 0.3, 0.4]) * 0.4
-    corona = visuals.Sphere(radius=radius * 2.5,
+    corona = visuals.Sphere(radius=radius * 1.6,
                            parent=parent_scene,
                            method='latitude',
                            subdivisions=16,
-                           color=tuple(corona_color) + (0.15 * temp_factor,))
+                           color=tuple(corona_color) + (0.1 * temp_factor,))  # Reduced opacity
     corona.transform = scene.transforms.MatrixTransform()
     glow_layers.append(corona)
     
-    # For very hot stars (> 10000K), add blue-white corona
+    # For very hot stars (> 10000K), add blue-white corona (reduced from 3.0 to 1.8)
     if temperature > 10000:
-        hot_corona = visuals.Sphere(radius=radius * 3.0,
+        hot_corona = visuals.Sphere(radius=radius * 1.8,
                                    parent=parent_scene,
                                    method='latitude',
                                    subdivisions=12,
-                                   color=(0.8, 0.9, 1.0, 0.1 * temp_factor))
+                                   color=(0.8, 0.9, 1.0, 0.05 * temp_factor))  # Much reduced opacity
         hot_corona.transform = scene.transforms.MatrixTransform()
         glow_layers.append(hot_corona)
     
@@ -244,8 +244,9 @@ def create_solar_system_planets(parent_scene, scale):
     planet_objects = {}
     
     for name, data in SOLAR_SYSTEM_PLANETS.items():
-        # Calculate visual radius (scaled for visibility) - make them bigger
-        planet_vis_radius = max(0.008, (data['radius'] * scale * 50))
+        # Calculate visual radius - use more appropriate scaling for unified system
+        # Scale planets to be visible but not too large compared to the star and exoplanet
+        planet_vis_radius = max(0.005, (data['radius'] * scale * 20))
         
         # Create planet sphere
         planet = visuals.Sphere(radius=planet_vis_radius,
@@ -366,19 +367,18 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
     solar_system_planets = {}
     if show_solar_system:
         print("Adding solar system planets...")
-        # Adjust scale for solar system - much smaller scale to fit in view but avoid star overlap
-        solar_scale = 0.8 / (10 * AU)  # Scale so inner planets are visible outside the star glow
-        solar_system_planets = create_solar_system_planets(view.scene, solar_scale)
+        # Use the SAME scale as the exoplanet system for spatial consistency
+        solar_system_planets = create_solar_system_planets(view.scene, scale)
 
     # Camera distance
     maxr = np.max(np.linalg.norm(path_units,axis=1))
     view.camera.distance = max(1.0, maxr*3.0)
 
-    # Animation
+    # Animation with unified time scale
     time_sim = 0.0
     def update(ev):
         nonlocal time_sim
-        dt = ev.dt * speed * DAY
+        dt = ev.dt * speed * DAY  # Same time scaling for all objects
         time_sim += dt
         
         # Update exoplanet orbital position
@@ -393,14 +393,14 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
         planet_atmosphere.transform.reset()
         planet_atmosphere.transform.translate(scaled_pos)
         
-        # Update solar system planets if showing
+        # Update solar system planets if showing - using SAME time scale
         if show_solar_system:
             for planet_name, planet_data in solar_system_planets.items():
                 planet_obj = planet_data['visual']
                 label_obj = planet_data['label']
                 data = planet_data['data']
                 
-                # Use the orbital elements for proper animation
+                # Use the orbital elements for proper animation with SAME time scale
                 a_m_solar = data['semi_major_axis']
                 e_solar = data['eccentricity']
                 i_deg_solar = data['inclination']
@@ -409,11 +409,11 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
                 M0_solar = planet_data['initial_M']
                 P_sec_solar = data['period']
                 
-                # Calculate new orbital position using proper orbital mechanics
+                # Calculate new orbital position using SAME time_sim (unified time scale)
                 solar_pos_3d = orbital_position_vector(a_m_solar, e_solar, i_deg_solar, 
                                                      omega_deg_solar, Omega_deg_solar, 
                                                      M0_solar, time_sim, P_sec_solar)
-                solar_pos = solar_pos_3d * solar_scale
+                solar_pos = solar_pos_3d * scale  # Use same scale as exoplanet
                 
                 # Update planet position
                 planet_obj.transform.reset()
@@ -444,7 +444,7 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False):
 if __name__=='__main__':
     sample = {'kepid':'KOI-0001','koi_period':54.4183827,'koi_time0bk':162.51384,
               'koi_smass':0.919,'koi_srad':0.927,'koi_prad':2.83,'koi_sma':0.2734,
-              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':10000.0}
+              'koi_eccen':0.05,'koi_incl':89.57,'koi_longp':90.0,'koi_steff':5778.0}
     df_sample = pd.DataFrame([sample])
     
     # Example 1: Show only the KOI system

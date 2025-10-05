@@ -32,6 +32,7 @@ class MainWindow(QMainWindow):
     start_prediction_signal = pyqtSignal(int)
     save_to_database_signal = pyqtSignal(int)
     request_batch_data_signal = pyqtSignal(int)
+    request_database_signal = pyqtSignal(str)  # Nueva señal para solicitar datos de la DB
     
     def __init__(self):
         super().__init__()
@@ -40,6 +41,14 @@ class MainWindow(QMainWindow):
         self.current_page = 0
         self.rows_per_page = 500
         self.loader_thread = None
+        
+        # Variables para la pestaña de datos
+        self.database_dataframe = None
+        self.filtered_dataframe = None
+        self.current_db_page = 0
+        self.current_sort_column = None
+        self.current_sort_order = Qt.AscendingOrder
+        
         self.setupUi()
         
     def setupUi(self):
@@ -58,12 +67,11 @@ class MainWindow(QMainWindow):
         self.tabWidget = QTabWidget(self.centralwidget)
         self.tabWidget.setObjectName("tabWidget")
         
-        # Pestaña de Modelos
+        # ========== PESTAÑA DE MODELOS ==========
         self.tabModelos = QWidget()
         self.tabModelos.setObjectName("tabModelos")
         self.modelosLayout = QVBoxLayout(self.tabModelos)
         self.hbox = QHBoxLayout()
-        
         
         # Label principal
         self.labelModelos = QLabel("Import exoplanet data:")
@@ -95,6 +103,13 @@ class MainWindow(QMainWindow):
         # Botones para gestionar archivos
         self.buttons_layout = QHBoxLayout()
         
+        self.btn_start_prediction = QPushButton('Start Prediction')
+        self.btn_start_prediction.clicked.connect(self.start_prediction)
+        self.btn_start_prediction.setEnabled(False)
+        
+        self.btn_abrir_csv = QPushButton('Add Data Batch')
+        self.btn_abrir_csv.clicked.connect(self.open_csv_batch)
+        
         self.btn_remove = QPushButton('Remove Selected')
         self.btn_remove.clicked.connect(self.remover_archivo)
         self.btn_remove.setEnabled(False)
@@ -107,6 +122,8 @@ class MainWindow(QMainWindow):
         self.btn_save_to_db.clicked.connect(self.save_to_database)
         self.btn_save_to_db.setEnabled(False)
         
+        self.buttons_layout.addWidget(self.btn_start_prediction)
+        self.buttons_layout.addWidget(self.btn_abrir_csv)
         self.buttons_layout.addWidget(self.btn_remove)
         self.buttons_layout.addWidget(self.btn_clear)
         self.buttons_layout.addWidget(self.btn_save_to_db)
@@ -116,7 +133,7 @@ class MainWindow(QMainWindow):
         
         self.modelosLayout.addWidget(self.batch_files_frame)
         
-        # NUEVO: Frame para mostrar datos del batch seleccionado
+        # Frame para mostrar datos del batch seleccionado
         self.data_viewer_frame = QFrame()
         self.data_viewer_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.data_viewer_frame.setLineWidth(2)
@@ -184,34 +201,148 @@ class MainWindow(QMainWindow):
         
         self.modelosLayout.addWidget(self.data_viewer_frame)
         
-        # Botones principales
-        self.hbox = QHBoxLayout()
-        
-        # start prediction button
-        self.btn_start_prediction = QPushButton('Start Prediction')
-        self.btn_start_prediction.clicked.connect(self.start_prediction)
-        self.btn_start_prediction.setEnabled(False)
-        
-        # open file button
-        self.btn_abrir_csv = QPushButton('Add Data Batch')
-        self.btn_abrir_csv.clicked.connect(self.open_csv_batch)
-        
-        self.hbox.addWidget(self.btn_start_prediction)
-        self.hbox.addWidget(self.btn_abrir_csv)
-        self.hbox.addStretch()
-        
-        self.modelosLayout.addLayout(self.hbox)
-        
         self.tabWidget.addTab(self.tabModelos, "Model")
         
-        # Pestaña de Datos
+        # ========== PESTAÑA DE DATOS (DATABASE) ==========
         self.tabDatos = QWidget()
         self.tabDatos.setObjectName("tabDatos")
         self.datosLayout = QVBoxLayout(self.tabDatos)
         
-        self.labelDatos = QLabel("Contenido de Datos")
-        self.labelDatos.setAlignment(Qt.AlignCenter)
+        # Label principal
+        self.labelDatos = QLabel("Database Visualization:")
+        self.labelDatos.setFont(QFont("Arial", 12))
+        self.labelDatos.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.datosLayout.addWidget(self.labelDatos)
+        
+        # Frame para controles de la base de datos
+        self.db_controls_frame = QFrame()
+        self.db_controls_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.db_controls_frame.setLineWidth(2)
+        self.db_controls_layout = QVBoxLayout(self.db_controls_frame)
+        
+        # Selector de base de datos
+        self.db_selector_layout = QHBoxLayout()
+        self.label_db_selector = QLabel("Select Database:")
+        self.label_db_selector.setFont(QFont("Arial", 10, QFont.Bold))
+        self.db_selector_layout.addWidget(self.label_db_selector)
+        
+        self.combo_db_selector = QComboBox()
+        self.combo_db_selector.addItem("Confirmed Exoplanets")
+        self.combo_db_selector.addItem("Rejected Exoplanets")
+        self.combo_db_selector.currentTextChanged.connect(self.on_database_changed)
+        self.db_selector_layout.addWidget(self.combo_db_selector)
+        
+        self.btn_refresh_db = QPushButton("Refresh")
+        self.btn_refresh_db.clicked.connect(self.refresh_database)
+        self.db_selector_layout.addWidget(self.btn_refresh_db)
+        
+        self.db_selector_layout.addStretch()
+        self.db_controls_layout.addLayout(self.db_selector_layout)
+        
+        # Controles de ordenamiento y búsqueda
+        self.search_sort_layout = QHBoxLayout()
+        
+        # Ordenamiento
+        self.label_sort = QLabel("Sort by:")
+        self.search_sort_layout.addWidget(self.label_sort)
+        
+        self.combo_sort_column = QComboBox()
+        self.combo_sort_column.setMinimumWidth(150)
+        self.search_sort_layout.addWidget(self.combo_sort_column)
+        
+        self.btn_sort_asc = QPushButton("↑ Ascending")
+        self.btn_sort_asc.clicked.connect(lambda: self.sort_database(Qt.AscendingOrder))
+        self.search_sort_layout.addWidget(self.btn_sort_asc)
+        
+        self.btn_sort_desc = QPushButton("↓ Descending")
+        self.btn_sort_desc.clicked.connect(lambda: self.sort_database(Qt.DescendingOrder))
+        self.search_sort_layout.addWidget(self.btn_sort_desc)
+        
+        self.search_sort_layout.addSpacing(20)
+        
+        # Búsqueda
+        self.label_search = QLabel("Search:")
+        self.search_sort_layout.addWidget(self.label_search)
+        
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Enter search term...")
+        self.search_input.setMinimumWidth(200)
+        self.search_input.textChanged.connect(self.on_search_text_changed)
+        self.search_sort_layout.addWidget(self.search_input)
+        
+        self.btn_clear_search = QPushButton("Clear")
+        self.btn_clear_search.clicked.connect(self.clear_search)
+        self.search_sort_layout.addWidget(self.btn_clear_search)
+        
+        self.search_sort_layout.addStretch()
+        
+        self.db_controls_layout.addLayout(self.search_sort_layout)
+        
+        self.datosLayout.addWidget(self.db_controls_frame)
+        
+        # Frame para mostrar datos de la base de datos
+        self.db_viewer_frame = QFrame()
+        self.db_viewer_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.db_viewer_frame.setLineWidth(2)
+        self.db_viewer_layout = QVBoxLayout(self.db_viewer_frame)
+        
+        # Header con información y paginación
+        self.db_header_layout = QHBoxLayout()
+        
+        self.label_db_info = QLabel("No data loaded")
+        self.label_db_info.setFont(QFont("Arial", 10, QFont.Bold))
+        self.db_header_layout.addWidget(self.label_db_info)
+        
+        self.db_header_layout.addStretch()
+        
+        # Controles de paginación para database
+        self.db_pagination_widget = QWidget()
+        self.db_pagination_layout = QHBoxLayout(self.db_pagination_widget)
+        self.db_pagination_layout.setContentsMargins(0, 0, 0, 0)
+        
+        self.btn_db_first = QPushButton('<<')
+        self.btn_db_first.setMaximumWidth(40)
+        self.btn_db_first.clicked.connect(self.go_to_first_db_page)
+        self.btn_db_first.setEnabled(False)
+        
+        self.btn_db_prev = QPushButton('<')
+        self.btn_db_prev.setMaximumWidth(40)
+        self.btn_db_prev.clicked.connect(self.go_to_prev_db_page)
+        self.btn_db_prev.setEnabled(False)
+        
+        self.label_db_page = QLabel('Page 0 of 0')
+        self.label_db_page.setAlignment(Qt.AlignCenter)
+        self.label_db_page.setMinimumWidth(100)
+        
+        self.btn_db_next = QPushButton('>')
+        self.btn_db_next.setMaximumWidth(40)
+        self.btn_db_next.clicked.connect(self.go_to_next_db_page)
+        self.btn_db_next.setEnabled(False)
+        
+        self.btn_db_last = QPushButton('>>')
+        self.btn_db_last.setMaximumWidth(40)
+        self.btn_db_last.clicked.connect(self.go_to_last_db_page)
+        self.btn_db_last.setEnabled(False)
+        
+        self.db_pagination_layout.addWidget(self.btn_db_first)
+        self.db_pagination_layout.addWidget(self.btn_db_prev)
+        self.db_pagination_layout.addWidget(self.label_db_page)
+        self.db_pagination_layout.addWidget(self.btn_db_next)
+        self.db_pagination_layout.addWidget(self.btn_db_last)
+        
+        self.db_header_layout.addWidget(self.db_pagination_widget)
+        
+        self.db_viewer_layout.addLayout(self.db_header_layout)
+        
+        # Tabla para mostrar datos de la base de datos
+        self.table_database = QTableWidget()
+        self.table_database.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_database.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_database.setAlternatingRowColors(True)
+        self.table_database.setSortingEnabled(False)  # Desactivamos el sorting nativo
+        self.db_viewer_layout.addWidget(self.table_database)
+        
+        self.datosLayout.addWidget(self.db_viewer_frame)
         
         self.tabWidget.addTab(self.tabDatos, "Data")
         
@@ -226,7 +357,12 @@ class MainWindow(QMainWindow):
         self.setStatusBar(self.statusbar)
         
         QtCore.QMetaObject.connectSlotsByName(self)
+        
+        # Cargar base de datos inicial
+        self.refresh_database()
 
+    # ========== MÉTODOS ORIGINALES (PESTAÑA MODELO) ==========
+    
     def open_csv_batch(self):
         """Abre diálogo para seleccionar CSV con validaciones"""
         try:
@@ -453,6 +589,217 @@ class MainWindow(QMainWindow):
             total_pages = (len(self.current_dataframe) + self.rows_per_page - 1) // self.rows_per_page
             self.current_page = total_pages - 1
             self.load_current_page()
+
+    # ========== MÉTODOS NUEVOS (PESTAÑA DATOS) ==========
+    
+    def refresh_database(self):
+        """Solicita actualización de la base de datos"""
+        db_type = "confirmed" if self.combo_db_selector.currentText() == "Confirmed Exoplanets" else "rejected"
+        self.request_database_signal.emit(db_type)
+        self.statusbar.showMessage("Refreshing database...", 1000)
+    
+    def on_database_changed(self):
+        """Se ejecuta cuando se cambia el selector de base de datos"""
+        self.refresh_database()
+    
+    def display_database_data(self, dataframe: pd.DataFrame, db_type: str):
+        """Muestra los datos de la base de datos"""
+        if dataframe is None or dataframe.empty:
+            self.database_dataframe = None
+            self.filtered_dataframe = None
+            self.label_db_info.setText(f"No data in {db_type} database")
+            self.table_database.setRowCount(0)
+            self.table_database.setColumnCount(0)
+            self.combo_sort_column.clear()
+            return
+        
+        # Guardar dataframe completo
+        self.database_dataframe = dataframe.copy()
+        self.filtered_dataframe = dataframe.copy()
+        self.current_db_page = 0
+        self.current_sort_column = None
+        self.current_sort_order = Qt.AscendingOrder
+        
+        # Actualizar combo de columnas para sorting
+        self.combo_sort_column.clear()
+        self.combo_sort_column.addItems(dataframe.columns.tolist())
+        
+        # Limpiar búsqueda
+        self.search_input.clear()
+        
+        # Cargar datos
+        self.load_current_db_page()
+        
+        self.statusbar.showMessage(f"Loaded {len(dataframe)} records from {db_type} database", 2000)
+    
+    def sort_database(self, order: Qt.SortOrder):
+        """Ordena la base de datos por la columna seleccionada"""
+        if self.filtered_dataframe is None or self.combo_sort_column.currentText() == "":
+            return
+        
+        column = self.combo_sort_column.currentText()
+        self.current_sort_column = column
+        self.current_sort_order = order
+        
+        # Ordenar el dataframe filtrado
+        ascending = (order == Qt.AscendingOrder)
+        
+        try:
+            # Intentar conversión numérica si es posible
+            if self.filtered_dataframe[column].dtype == 'object':
+                # Intentar convertir a numérico para ordenar correctamente
+                try:
+                    temp_col = pd.to_numeric(self.filtered_dataframe[column], errors='coerce')
+                    # Si la conversión fue exitosa (no todos son NaN), usar valores numéricos
+                    if not temp_col.isna().all():
+                        self.filtered_dataframe = self.filtered_dataframe.iloc[temp_col.argsort()]
+                        if not ascending:
+                            self.filtered_dataframe = self.filtered_dataframe.iloc[::-1]
+                    else:
+                        # Ordenar como string
+                        self.filtered_dataframe = self.filtered_dataframe.sort_values(by=column, ascending=ascending)
+                except:
+                    self.filtered_dataframe = self.filtered_dataframe.sort_values(by=column, ascending=ascending)
+            else:
+                self.filtered_dataframe = self.filtered_dataframe.sort_values(by=column, ascending=ascending)
+            
+            self.filtered_dataframe = self.filtered_dataframe.reset_index(drop=True)
+            self.current_db_page = 0
+            self.load_current_db_page()
+            
+            order_text = "ascending" if ascending else "descending"
+            self.statusbar.showMessage(f"Sorted by {column} ({order_text})", 2000)
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Sort Error", f"Could not sort by {column}: {str(e)}")
+    
+    def on_search_text_changed(self):
+        """Se ejecuta cuando cambia el texto de búsqueda"""
+        search_text = self.search_input.text().strip()
+        
+        if self.database_dataframe is None:
+            return
+        
+        if search_text == "":
+            # Si no hay búsqueda, mostrar todos los datos
+            self.filtered_dataframe = self.database_dataframe.copy()
+        else:
+            # Buscar en la columna seleccionada para sorting
+            if self.combo_sort_column.currentText() == "":
+                QMessageBox.warning(self, "Search Error", "Please select a column to sort by first")
+                return
+            
+            column = self.combo_sort_column.currentText()
+            
+            try:
+                # Búsqueda case-insensitive
+                mask = self.database_dataframe[column].astype(str).str.contains(
+                    search_text, 
+                    case=False, 
+                    na=False
+                )
+                self.filtered_dataframe = self.database_dataframe[mask].copy().reset_index(drop=True)
+                
+                # Mantener el ordenamiento actual si existe
+                if self.current_sort_column:
+                    ascending = (self.current_sort_order == Qt.AscendingOrder)
+                    self.filtered_dataframe = self.filtered_dataframe.sort_values(
+                        by=self.current_sort_column, 
+                        ascending=ascending
+                    ).reset_index(drop=True)
+                
+            except Exception as e:
+                QMessageBox.warning(self, "Search Error", f"Error searching: {str(e)}")
+                return
+        
+        self.current_db_page = 0
+        self.load_current_db_page()
+        
+        if search_text:
+            self.statusbar.showMessage(
+                f"Found {len(self.filtered_dataframe)} results for '{search_text}'", 
+                2000
+            )
+    
+    def clear_search(self):
+        """Limpia la búsqueda"""
+        self.search_input.clear()
+        self.on_search_text_changed()
+    
+    def load_current_db_page(self):
+        """Carga la página actual de la base de datos"""
+        if self.filtered_dataframe is None or self.filtered_dataframe.empty:
+            self.table_database.setRowCount(0)
+            self.table_database.setColumnCount(0)
+            self.label_db_info.setText("No data to display")
+            self.label_db_page.setText('Page 0 of 0')
+            self.btn_db_first.setEnabled(False)
+            self.btn_db_prev.setEnabled(False)
+            self.btn_db_next.setEnabled(False)
+            self.btn_db_last.setEnabled(False)
+            return
+        
+        total_rows = len(self.filtered_dataframe)
+        total_pages = (total_rows + self.rows_per_page - 1) // self.rows_per_page
+        
+        # Calcular rango de filas
+        start_row = self.current_db_page * self.rows_per_page
+        end_row = min(start_row + self.rows_per_page, total_rows)
+        
+        # Obtener subset de datos
+        page_data = self.filtered_dataframe.iloc[start_row:end_row]
+        
+        # Actualizar label
+        db_name = self.combo_db_selector.currentText()
+        self.label_db_info.setText(
+            f"{db_name} - Showing {start_row+1}-{end_row} of {total_rows} records"
+        )
+        
+        # Actualizar info de página
+        self.label_db_page.setText(f'Page {self.current_db_page + 1} of {total_pages}')
+        
+        # Configurar tabla
+        self.table_database.setRowCount(len(page_data))
+        self.table_database.setColumnCount(len(page_data.columns))
+        self.table_database.setHorizontalHeaderLabels(page_data.columns.tolist())
+        
+        # Llenar tabla con datos
+        for i in range(len(page_data)):
+            for j, col in enumerate(page_data.columns):
+                value = page_data.iloc[i, j]
+                item = QTableWidgetItem(str(value))
+                self.table_database.setItem(i, j, item)
+        
+        # Ajustar tamaño de columnas
+        self.table_database.resizeColumnsToContents()
+        
+        # Actualizar estado de botones de paginación
+        self.btn_db_first.setEnabled(self.current_db_page > 0)
+        self.btn_db_prev.setEnabled(self.current_db_page > 0)
+        self.btn_db_next.setEnabled(self.current_db_page < total_pages - 1)
+        self.btn_db_last.setEnabled(self.current_db_page < total_pages - 1)
+    
+    def go_to_first_db_page(self):
+        self.current_db_page = 0
+        self.load_current_db_page()
+    
+    def go_to_prev_db_page(self):
+        if self.current_db_page > 0:
+            self.current_db_page -= 1
+            self.load_current_db_page()
+    
+    def go_to_next_db_page(self):
+        if self.filtered_dataframe is not None:
+            total_pages = (len(self.filtered_dataframe) + self.rows_per_page - 1) // self.rows_per_page
+            if self.current_db_page < total_pages - 1:
+                self.current_db_page += 1
+                self.load_current_db_page()
+    
+    def go_to_last_db_page(self):
+        if self.filtered_dataframe is not None:
+            total_pages = (len(self.filtered_dataframe) + self.rows_per_page - 1) // self.rows_per_page
+            self.current_db_page = total_pages - 1
+            self.load_current_db_page()
 
 
 if __name__ == "__main__":
