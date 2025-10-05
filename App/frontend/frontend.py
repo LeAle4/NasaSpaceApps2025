@@ -347,19 +347,68 @@ class MainWindow(QMainWindow):
 
         self.trainLayout.addWidget(self.train_controls_frame)
 
-        # Preview table for the uploaded dataset
+        # Preview table for the uploaded dataset (with pagination)
         self.dataset_preview_frame = QFrame()
         self.dataset_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.dataset_preview_frame.setLineWidth(2)
         self.dataset_preview_layout = QVBoxLayout(self.dataset_preview_frame)
+
+        # Header + pagination controls for dataset preview
+        self.dataset_header_layout = QHBoxLayout()
         self.label_dataset_preview = QLabel("Dataset preview:")
-        self.dataset_preview_layout.addWidget(self.label_dataset_preview)
+        self.dataset_header_layout.addWidget(self.label_dataset_preview)
+        self.dataset_header_layout.addStretch()
+
+        self.dataset_pagination_widget = QWidget()
+        self.dataset_pagination_layout = QHBoxLayout(self.dataset_pagination_widget)
+        self.dataset_pagination_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.btn_dataset_first = QPushButton('<<')
+        self.btn_dataset_first.setMaximumWidth(40)
+        self.btn_dataset_first.clicked.connect(self.go_to_first_dataset_page)
+        self.btn_dataset_first.setEnabled(False)
+
+        self.btn_dataset_prev = QPushButton('<')
+        self.btn_dataset_prev.setMaximumWidth(40)
+        self.btn_dataset_prev.clicked.connect(self.go_to_prev_dataset_page)
+        self.btn_dataset_prev.setEnabled(False)
+
+        self.label_dataset_page_info = QLabel('Page 0 of 0')
+        self.label_dataset_page_info.setAlignment(Qt.AlignCenter)
+        self.label_dataset_page_info.setMinimumWidth(100)
+
+        self.btn_dataset_next = QPushButton('>')
+        self.btn_dataset_next.setMaximumWidth(40)
+        self.btn_dataset_next.clicked.connect(self.go_to_next_dataset_page)
+        self.btn_dataset_next.setEnabled(False)
+
+        self.btn_dataset_last = QPushButton('>>')
+        self.btn_dataset_last.setMaximumWidth(40)
+        self.btn_dataset_last.clicked.connect(self.go_to_last_dataset_page)
+        self.btn_dataset_last.setEnabled(False)
+
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_first)
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_prev)
+        self.dataset_pagination_layout.addWidget(self.label_dataset_page_info)
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_next)
+        self.dataset_pagination_layout.addWidget(self.btn_dataset_last)
+
+        self.dataset_header_layout.addWidget(self.dataset_pagination_widget)
+        self.dataset_pagination_widget.setVisible(False)
+
+        self.dataset_preview_layout.addLayout(self.dataset_header_layout)
+
         self.table_dataset_preview = QTableWidget()
         self.table_dataset_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_dataset_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_dataset_preview.setAlternatingRowColors(True)
         self.dataset_preview_layout.addWidget(self.table_dataset_preview)
         self.trainLayout.addWidget(self.dataset_preview_frame)
+
+        # dataset paging state
+        self._dataset_df = None
+        self._dataset_current_page = 0
+        self._dataset_rows_per_page = 500
 
         self.trainLayout.addStretch()
         # Add Train first
@@ -662,24 +711,94 @@ class MainWindow(QMainWindow):
         self.display_dataset_preview(df)
 
     def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
-        """Show the first `max_rows` rows of the dataset in the preview table."""
+        """Display the dataset using paging into the preview table.
+
+        The preview will show the first page and enable pagination controls if
+        the dataset exceeds the page size.
+        """
         if dataframe is None or dataframe.empty:
+            self._dataset_df = None
             self.table_dataset_preview.setRowCount(0)
             self.table_dataset_preview.setColumnCount(0)
+            self.dataset_pagination_widget.setVisible(False)
             return
 
-        df = dataframe.head(max_rows)
-        self.table_dataset_preview.setRowCount(len(df))
-        self.table_dataset_preview.setColumnCount(len(df.columns))
-        self.table_dataset_preview.setHorizontalHeaderLabels(df.columns.tolist())
+        # store and initialize paging
+        self._dataset_df = dataframe.copy()
+        self._dataset_current_page = 0
 
-        for i in range(len(df)):
-            for j, col in enumerate(df.columns):
-                value = df.iloc[i, j]
+        total_rows = len(self._dataset_df)
+        total_pages = (total_rows + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+        if total_pages > 1:
+            self.dataset_pagination_widget.setVisible(True)
+        else:
+            self.dataset_pagination_widget.setVisible(False)
+
+        # load first page
+        self.load_current_dataset_page()
+
+    def load_current_dataset_page(self):
+        """Render the current page of the dataset preview into the table widget."""
+        if self._dataset_df is None or self._dataset_df.empty:
+            return
+
+        total_rows = len(self._dataset_df)
+        total_pages = (total_rows + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+
+        start_row = self._dataset_current_page * self._dataset_rows_per_page
+        end_row = min(start_row + self._dataset_rows_per_page, total_rows)
+
+        page_data = self._dataset_df.iloc[start_row:end_row]
+
+        # Update header label
+        self.label_dataset_preview.setText(f"Dataset preview (Showing {start_row+1}-{end_row} of {total_rows})")
+
+        # Update page info
+        self.label_dataset_page_info.setText(f'Page {self._dataset_current_page + 1} of {total_pages}')
+
+        # Populate table
+        self.table_dataset_preview.setRowCount(len(page_data))
+        self.table_dataset_preview.setColumnCount(len(page_data.columns))
+        self.table_dataset_preview.setHorizontalHeaderLabels(page_data.columns.tolist())
+
+        for i in range(len(page_data)):
+            for j, col in enumerate(page_data.columns):
+                value = page_data.iloc[i, j]
                 item = QTableWidgetItem(str(value))
                 self.table_dataset_preview.setItem(i, j, item)
 
         self.table_dataset_preview.resizeColumnsToContents()
+
+        # Update nav buttons
+        self.btn_dataset_first.setEnabled(self._dataset_current_page > 0)
+        self.btn_dataset_prev.setEnabled(self._dataset_current_page > 0)
+        self.btn_dataset_next.setEnabled(self._dataset_current_page < total_pages - 1)
+        self.btn_dataset_last.setEnabled(self._dataset_current_page < total_pages - 1)
+
+        # Make sure pagination widget visible state is consistent
+        self.dataset_pagination_widget.setVisible(total_pages > 1)
+
+    def go_to_first_dataset_page(self):
+        self._dataset_current_page = 0
+        self.load_current_dataset_page()
+
+    def go_to_prev_dataset_page(self):
+        if self._dataset_current_page > 0:
+            self._dataset_current_page -= 1
+            self.load_current_dataset_page()
+
+    def go_to_next_dataset_page(self):
+        if self._dataset_df is not None:
+            total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+            if self._dataset_current_page < total_pages - 1:
+                self._dataset_current_page += 1
+                self.load_current_dataset_page()
+
+    def go_to_last_dataset_page(self):
+        if self._dataset_df is not None:
+            total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
+            self._dataset_current_page = total_pages - 1
+            self.load_current_dataset_page()
     
     def add_batch_info(self, batch_info: dict):
         item_text = f"Batch {batch_info['batch_id']}.  Length {batch_info['batch_length']}  Confirmed {batch_info['confirmed']}  Rejected {batch_info['rejected']}"
