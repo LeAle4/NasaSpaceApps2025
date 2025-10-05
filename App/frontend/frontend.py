@@ -328,26 +328,97 @@ class MainWindow(QMainWindow):
         self.train_controls_frame.setLineWidth(2)
         self.train_controls_layout = QHBoxLayout(self.train_controls_frame)
 
-        # Single dataset (CSV) selector
-        self.label_dataset = QLabel("Dataset (single CSV):")
-        self.train_controls_layout.addWidget(self.label_dataset)
+        # Features and Labels selectors (split dataset)
+        # Features selector
+        self.label_features = QLabel("Features CSV:")
+        self.train_controls_layout.addWidget(self.label_features)
 
-        self.dataset_path_label = QLabel("<no file selected>")
-        self.dataset_path_label.setMinimumWidth(300)
-        self.train_controls_layout.addWidget(self.dataset_path_label)
+        self.features_path_label = QLabel("<no file selected>")
+        self.features_path_label.setMinimumWidth(260)
+        self.train_controls_layout.addWidget(self.features_path_label)
 
-        self.btn_select_dataset = QPushButton('Select Dataset')
-        self.btn_select_dataset.clicked.connect(self.select_dataset_file)
-        self.train_controls_layout.addWidget(self.btn_select_dataset)
+        self.btn_select_features = QPushButton('Select Features')
+        self.btn_select_features.clicked.connect(self.select_features_file)
+        self.train_controls_layout.addWidget(self.btn_select_features)
 
-        self.btn_load_dataset = QPushButton('Load Dataset')
-        self.btn_load_dataset.clicked.connect(self.load_dataset_clicked)
-        self.btn_load_dataset.setEnabled(False)
-        self.train_controls_layout.addWidget(self.btn_load_dataset)
+        self.btn_load_features = QPushButton('Load Features')
+        self.btn_load_features.clicked.connect(self.load_features_clicked)
+        self.btn_load_features.setEnabled(False)
+        self.train_controls_layout.addWidget(self.btn_load_features)
+
+        # Labels selector
+        self.label_labels = QLabel("Labels CSV:")
+        self.train_controls_layout.addWidget(self.label_labels)
+
+        self.labels_path_label = QLabel("<no file selected>")
+        self.labels_path_label.setMinimumWidth(260)
+        self.train_controls_layout.addWidget(self.labels_path_label)
+
+        self.btn_select_labels = QPushButton('Select Labels')
+        self.btn_select_labels.clicked.connect(self.select_labels_file)
+        self.train_controls_layout.addWidget(self.btn_select_labels)
+
+        self.btn_load_labels = QPushButton('Load Labels')
+        self.btn_load_labels.clicked.connect(self.load_labels_clicked)
+        self.btn_load_labels.setEnabled(False)
+        self.train_controls_layout.addWidget(self.btn_load_labels)
 
         self.train_controls_layout.addStretch()
 
         self.trainLayout.addWidget(self.train_controls_frame)
+
+        # --- Random Forest parameter controls ---
+        self.rf_params_frame = QFrame()
+        self.rf_params_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.rf_params_frame.setLineWidth(2)
+        self.rf_params_layout = QHBoxLayout(self.rf_params_frame)
+
+        # n_estimators
+        self.label_n_estimators = QLabel("n_estimators:")
+        self.label_n_estimators.setToolTip("Number of trees in the Random Forest")
+        self.rf_params_layout.addWidget(self.label_n_estimators)
+        self.spin_n_estimators = QSpinBox()
+        self.spin_n_estimators.setRange(1, 10000)
+        self.spin_n_estimators.setValue(100)
+        self.spin_n_estimators.setToolTip("Number of trees (default 100)")
+        self.spin_n_estimators.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_n_estimators)
+
+        # max_depth
+        self.label_max_depth = QLabel("max_depth:")
+        self.label_max_depth.setToolTip("Maximum depth of each tree (0 for None)")
+        self.rf_params_layout.addWidget(self.label_max_depth)
+        self.spin_max_depth = QSpinBox()
+        self.spin_max_depth.setRange(-1, 1000)
+        self.spin_max_depth.setValue(0)
+        self.spin_max_depth.setToolTip("Maximum depth (0 means None)")
+        self.spin_max_depth.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_max_depth)
+
+        # random_state
+        self.label_random_state = QLabel("random_state:")
+        self.label_random_state.setToolTip("Random seed for reproducibility (-1 for None)")
+        self.rf_params_layout.addWidget(self.label_random_state)
+        self.spin_random_state = QSpinBox()
+        self.spin_random_state.setRange(-1, 999999)
+        self.spin_random_state.setValue(-1)
+        self.spin_random_state.setToolTip("Random seed (-1 means None)")
+        self.spin_random_state.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_random_state)
+
+        # n_jobs
+        self.label_n_jobs = QLabel("n_jobs:")
+        self.label_n_jobs.setToolTip("Number of parallel jobs (0 for None, -1 for all cores)")
+        self.rf_params_layout.addWidget(self.label_n_jobs)
+        self.spin_n_jobs = QSpinBox()
+        self.spin_n_jobs.setRange(-1, 64)
+        self.spin_n_jobs.setValue(1)
+        self.spin_n_jobs.setToolTip("Parallel jobs (-1 use all cores)")
+        self.spin_n_jobs.setMinimumWidth(80)
+        self.rf_params_layout.addWidget(self.spin_n_jobs)
+
+        self.rf_params_layout.addStretch()
+        self.trainLayout.addWidget(self.rf_params_frame)
 
     # Preview table for the uploaded dataset (with pagination)
     # The preview uses paging to avoid rendering very large tables at once.
@@ -409,6 +480,25 @@ class MainWindow(QMainWindow):
         self.table_dataset_preview.setAlternatingRowColors(True)
         self.dataset_preview_layout.addWidget(self.table_dataset_preview)
         self.trainLayout.addWidget(self.dataset_preview_frame)
+
+        # Small Labels preview table (shows label dataframe preview)
+        self.labels_preview_frame = QFrame()
+        self.labels_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.labels_preview_frame.setLineWidth(2)
+        self.labels_preview_layout = QVBoxLayout(self.labels_preview_frame)
+
+        self.label_labels_preview_header = QLabel("Labels preview:")
+        self.labels_preview_layout.addWidget(self.label_labels_preview_header)
+
+        self.table_labels_preview = QTableWidget()
+        self.table_labels_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_labels_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_labels_preview.setAlternatingRowColors(True)
+        # Make labels preview compact
+        self.table_labels_preview.setMinimumHeight(120)
+        self.labels_preview_layout.addWidget(self.table_labels_preview)
+
+        self.trainLayout.addWidget(self.labels_preview_frame)
 
         # dataset paging state (keeps the full DataFrame in memory and renders
         # only the current page to the table widget)
@@ -648,6 +738,102 @@ class MainWindow(QMainWindow):
             self._rejected_csv = file_path
             self.statusbar.showMessage(f"Rejected CSV selected", 2000)
 
+    # New: Features / Labels file selection and loading
+    def select_features_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select features CSV", "", "CSV Files (*.csv);;All files (*)")
+        if file_path:
+            self._features_path = file_path
+            self.features_path_label.setText(os.path.basename(file_path))
+            ext = os.path.splitext(file_path)[1].lower()
+            supported = ['.csv', '.tsv', '.tab', '.vot', '.votable', '.xml', '.tbl']
+            self.btn_load_features.setEnabled(ext in supported)
+
+    def select_labels_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select labels CSV", "", "CSV Files (*.csv);;All files (*)")
+        if file_path:
+            self._labels_path = file_path
+            self.labels_path_label.setText(os.path.basename(file_path))
+            ext = os.path.splitext(file_path)[1].lower()
+            supported = ['.csv', '.tsv', '.tab', '.vot', '.votable', '.xml', '.tbl']
+            self.btn_load_labels.setEnabled(ext in supported)
+
+    def load_features_clicked(self):
+        path = getattr(self, '_features_path', None)
+        if not path:
+            QMessageBox.warning(self, "No file", "No features file selected.")
+            return
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == '.csv':
+                df, status, msg = dataio.loadcsvfile(path)
+            elif ext in ['.tsv', '.tab']:
+                df, status, msg = dataio.loadtabseptable(path)
+            elif ext in ['.vot', '.votable', '.xml']:
+                df, status, msg = dataio.loadvotableable(path)
+            elif ext == '.tbl':
+                df, status, msg = dataio.loadipactable(path)
+            else:
+                df, status, msg = dataio.loadcsvfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Load error", f"Error calling data loader: {e}")
+            return
+
+        if status != 1 or df is None:
+            QMessageBox.critical(self, "Load failed", f"Failed to load features:\n{msg}")
+            return
+
+        self._features_df = df
+        self.statusbar.showMessage(f"Features loaded: {len(df)} rows", 2000)
+        # Use existing dataset preview for features
+        self.display_dataset_preview(df)
+
+    def load_labels_clicked(self):
+        path = getattr(self, '_labels_path', None)
+        if not path:
+            QMessageBox.warning(self, "No file", "No labels file selected.")
+            return
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext == '.csv':
+                df, status, msg = dataio.loadcsvfile(path)
+            elif ext in ['.tsv', '.tab']:
+                df, status, msg = dataio.loadtabseptable(path)
+            elif ext in ['.vot', '.votable', '.xml']:
+                df, status, msg = dataio.loadvotableable(path)
+            elif ext == '.tbl':
+                df, status, msg = dataio.loadipactable(path)
+            else:
+                df, status, msg = dataio.loadcsvfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, "Load error", f"Error calling data loader: {e}")
+            return
+
+        if status != 1 or df is None:
+            QMessageBox.critical(self, "Load failed", f"Failed to load labels:\n{msg}")
+            return
+
+        self._labels_df = df
+        self.statusbar.showMessage(f"Labels loaded: {len(df)} rows", 2000)
+        self.display_labels_preview(df)
+
+    def display_labels_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
+        if dataframe is None or dataframe.empty:
+            self.table_labels_preview.setRowCount(0)
+            self.table_labels_preview.setColumnCount(0)
+            return
+
+        df = dataframe if len(dataframe) <= max_rows else dataframe.head(max_rows)
+        self.table_labels_preview.setRowCount(len(df))
+        self.table_labels_preview.setColumnCount(len(df.columns))
+        self.table_labels_preview.setHorizontalHeaderLabels(df.columns.tolist())
+
+        for i in range(len(df)):
+            for j, col in enumerate(df.columns):
+                item = QTableWidgetItem(str(df.iloc[i, j]))
+                self.table_labels_preview.setItem(i, j, item)
+
+        self.table_labels_preview.resizeColumnsToContents()
+
     def select_outdir(self):
         folder = QFileDialog.getExistingDirectory(self, "Select output directory", "")
         if folder:
@@ -665,6 +851,32 @@ class MainWindow(QMainWindow):
         # Emit signal to backend
         self.start_training_signal.emit(confirmed, rejected, outdir or '')
         self.statusbar.showMessage("Training started in background", 2000)
+
+    def get_rf_params(self):
+        """Return a dict with Random Forest parameters from the UI controls.
+
+        Conversions:
+        - max_depth: 0 -> None
+        - random_state: -1 -> None
+        - n_jobs: 0 -> None
+        """
+        try:
+            n_estimators = int(self.spin_n_estimators.value())
+            max_depth = int(self.spin_max_depth.value())
+            max_depth = None if max_depth == 0 else max_depth
+            random_state = int(self.spin_random_state.value())
+            random_state = None if random_state == -1 else random_state
+            n_jobs = int(self.spin_n_jobs.value())
+            n_jobs = None if n_jobs == 0 else n_jobs
+            return {
+                'n_estimators': n_estimators,
+                'max_depth': max_depth,
+                'random_state': random_state,
+                'n_jobs': n_jobs
+            }
+        except Exception:
+            # Fallback to sensible defaults
+            return {'n_estimators': 100, 'max_depth': None, 'random_state': None, 'n_jobs': 1}
 
     # === Dataset upload handlers for Train tab ===
     def select_dataset_file(self):
