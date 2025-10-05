@@ -1,173 +1,136 @@
-"""Tools to visualize a trained RandomForest model and feature relationships.
-
-Functions:
-- load_model(path): loads joblib model
-- plot_gini_feature_importance(clf, feature_names, top_n=20, savepath=None)
-- plot_permutation_importance(clf, X, y, top_n=20, n_repeats=10, savepath=None)
-- plot_feature_correlations(X, y, feature_names, top_n=10, savepath=None)
-
-These helpers save PNGs into `viz_out/` when savepath is provided and return
-matplotlib Axes/objects for further customization.
-"""
-from typing import Optional, Sequence
+import os
 import joblib
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import os
-
 from sklearn.inspection import permutation_importance
+from sklearn.metrics import make_scorer, recall_score
+from sklearn.model_selection import train_test_split
 
-# Use existing visualization helpers where sensible
-try:
-    from Modelo import visualization
-except Exception:
-    visualization = None
-
-
-def load_model(path: str):
-    """Load a joblib model from disk."""
-    return joblib.load(path)
+FEATURE_PATH = "data/non_candidates_processed_features.csv"
+LABEL_PATH = "data/non_candidates_processed_labels.csv"
+MODELIN = "GOAT.joblib"
+VIZOUT = "viz_out"
+TEST_SIZE = 0.4
+RANDOM_STATE = 420
 
 
-def plot_gini_feature_importance(clf, feature_names: Sequence[str], top_n: int = 20, savepath: Optional[str] = None):
-    """Plot Gini feature importances from a RandomForest-like estimator.
-
-    Args:
-        clf: fitted estimator with attribute `feature_importances_`.
-        feature_names: list of feature names matching training columns.
-        top_n: how many top features to show.
-        savepath: optional path to save PNG.
-    Returns:
-        ax: matplotlib Axes with the barplot.
-    """
-    if not hasattr(clf, 'feature_importances_'):
-        raise ValueError('Estimator has no attribute feature_importances_')
-
-    fi = np.asarray(clf.feature_importances_)
-    idx = np.argsort(fi)[::-1][:top_n]
-    names = [feature_names[i] for i in idx]
-    values = fi[idx]
-
-    fig, ax = plt.subplots(figsize=(8, max(4, 0.25 * len(names))))
-    ax.barh(range(len(names))[::-1], values[::-1], color='tab:blue')
-    ax.set_yticks(range(len(names)))
-    ax.set_yticklabels(names[::-1])
-    ax.set_xlabel('Gini importance')
-    ax.set_title('Top feature importances (Gini)')
-    plt.tight_layout()
-
-    if savepath:
-        os.makedirs(os.path.dirname(savepath), exist_ok=True)
-        fig.savefig(savepath, dpi=150, bbox_inches='tight')
-    return ax
+def _resolve_path(rel_path: str) -> str:
+	"""Resolve a path relative to this file's directory."""
+	base = os.path.dirname(__file__)
+	return os.path.join(base, rel_path)
 
 
-def plot_permutation_importance(clf, X, y, feature_names: Sequence[str], top_n: int = 20, n_repeats: int = 10, savepath: Optional[str] = None):
-    """Compute and plot permutation importances on X,y.
+def compute_and_save_importances(model_path: str = MODELIN,
+								 feature_csv: str = FEATURE_PATH,
+								 label_csv: str = LABEL_PATH,
+								 out_dir: str = VIZOUT,
+								 test_size: float = TEST_SIZE,
+								 random_state: int = RANDOM_STATE):
+	"""Load model and data, compute feature importances (model and permutation),
+	save CSVs and plots to `out_dir`, and print top features.
 
-    Returns the permutation importance result object and the Axes.
-    """
-    X_arr = np.asarray(X)
-    y_arr = np.asarray(y)
-    pi = permutation_importance(clf, X_arr, y_arr, n_repeats=n_repeats, random_state=0, n_jobs=-1)
+	Outputs:
+	- feature_importances_model.csv / .png (if model exposes feature_importances_)
+	- feature_importances_permutation.csv / .png
+	"""
+	model_abspath = _resolve_path(model_path)
+	features_abspath = _resolve_path(feature_csv)
+	labels_abspath = _resolve_path(label_csv)
+	out_dir_abspath = _resolve_path(out_dir)
+	os.makedirs(out_dir_abspath, exist_ok=True)
 
-    means = pi.importances_mean
-    idx = np.argsort(means)[::-1][:top_n]
-    names = [feature_names[i] for i in idx]
-    values = means[idx]
+	# Load data (assume rows correspond; files don't include a shared index)
+	if not os.path.exists(features_abspath) or not os.path.exists(labels_abspath):
+		raise FileNotFoundError(f"Feature or label file not found: {features_abspath}, {labels_abspath}")
 
-    fig, ax = plt.subplots(figsize=(8, max(4, 0.25 * len(names))))
-    ax.barh(range(len(names))[::-1], values[::-1], color='tab:green')
-    ax.set_yticks(range(len(names)))
-    ax.set_yticklabels(names[::-1])
-    ax.set_xlabel('Permutation importance (mean decrease in score)')
-    ax.set_title('Top features by permutation importance')
-    plt.tight_layout()
+	X = pd.read_csv(features_abspath)  # features as columns, rows are samples
+	y_df = pd.read_csv(labels_abspath)
+	# If labels file has a single column, take it as the Series
+	if y_df.shape[1] == 1:
+		y = y_df.iloc[:, 0].squeeze()
+	else:
+		# If labels file contains an index column plus label, prefer the 'koi_disposition' column if present
+		if 'koi_disposition' in y_df.columns:
+			y = y_df['koi_disposition'].squeeze()
+		else:
+			# fallback: take the first column
+			y = y_df.iloc[:, 0].squeeze()
 
-    if savepath:
-        os.makedirs(os.path.dirname(savepath), exist_ok=True)
-        fig.savefig(savepath, dpi=150, bbox_inches='tight')
-    return pi, ax
+	# Ensure X and y have the same number of rows (samples)
+	if len(X) != len(y):
+		raise ValueError(f"Feature matrix and label vector have different lengths: {len(X)} vs {len(y)}.\n"
+						 "Make sure both CSVs are row-aligned or provide an index to join on.")
 
+	X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=random_state)
 
-def plot_feature_correlations(X, y, feature_names: Sequence[str], top_n: int = 10, savepath: Optional[str] = None):
-    """Plot simple scatter/density plots of top_n features vs target.
+	# Load model
+	if not os.path.exists(model_abspath):
+		raise FileNotFoundError(f"Model file not found: {model_abspath}")
+	model = joblib.load(model_abspath)
 
-    For classification, this will show violin or box plots per class for each
-    top feature. X may be a DataFrame or 2D array; y is the target labels.
-    """
-    # Convert to pandas DataFrame for convenience
-    if isinstance(X, pd.DataFrame):
-        dfX = X.copy()
-    else:
-        dfX = pd.DataFrame(np.asarray(X), columns=list(feature_names))
+	# 1) Model-based importances (if available)
+	model_importances = None
+	if hasattr(model, "feature_importances_"):
+		model_importances = pd.Series(model.feature_importances_, index=X.columns)
+		model_importances = model_importances.sort_values(ascending=False)
+		# Save CSV and plot
+		csv_path = os.path.join(out_dir_abspath, "feature_importances_model.csv")
+		model_importances.to_csv(csv_path, header=["importance"]) 
 
-    y_ser = pd.Series(y, name='target')
+		plt.figure(figsize=(8, max(4, len(model_importances) * 0.2)))
+		model_importances.head(30).sort_values().plot(kind='barh')
+		plt.title('Model feature importances')
+		plt.xlabel('Importance')
+		plt.tight_layout()
+		png_path = os.path.join(out_dir_abspath, "feature_importances_model.png")
+		plt.savefig(png_path)
+		plt.close()
+		print(f"Saved model feature importances to: {csv_path} and {png_path}")
+	else:
+		print("Model has no attribute 'feature_importances_'. Skipping model-based importances.")
 
-    # Compute correlation (Pearson) between each numeric feature and numeric target
-    # For categorical target, compute ANOVA-like effect via group means difference magnitude
-    numeric = dfX.select_dtypes(include=[np.number])
-    corrs = {}
-    try:
-        # attempt numeric correlation; if target is categorical, coerce to codes
-        y_num = pd.to_numeric(y_ser, errors='coerce')
-        for col in numeric.columns:
-            corrs[col] = abs(numeric[col].corr(y_num))
-    except Exception:
-        # fallback: use group mean differences
-        for col in numeric.columns:
-            try:
-                grp = dfX[col].groupby(y_ser).mean()
-                corrs[col] = float((grp.max() - grp.min()))
-            except Exception:
-                corrs[col] = 0.0
+	# 2) Permutation importance (overall, using accuracy) -- more model-agnostic
+	perm_result = permutation_importance(model, X_test, y_test, n_repeats=30, random_state=random_state)
+	perm_importances = pd.Series(perm_result.importances_mean, index=X.columns)
+	perm_importances = perm_importances.sort_values(ascending=False)
+	csv_path = os.path.join(out_dir_abspath, "feature_importances_permutation.csv")
+	perm_importances.to_csv(csv_path, header=["importance"])
 
-    # Get top_n features by correlation measure
-    sorted_feats = sorted(corrs.items(), key=lambda x: x[1], reverse=True)[:top_n]
-    top_features = [f for f, _ in sorted_feats]
+	plt.figure(figsize=(8, max(4, len(perm_importances) * 0.2)))
+	perm_importances.head(30).sort_values().plot(kind='barh', color='C1')
+	plt.title('Permutation feature importances (test set)')
+	plt.xlabel('Decrease in score (mean over repeats)')
+	plt.tight_layout()
+	png_path = os.path.join(out_dir_abspath, "feature_importances_permutation.png")
+	plt.savefig(png_path)
+	plt.close()
+	print(f"Saved permutation importances to: {csv_path} and {png_path}")
 
-    # Create subplots
-    n = len(top_features)
-    cols = 2
-    rows = (n + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 3 * rows))
-    axes = np.array(axes).reshape(-1)
+	# 3) Example: class-specific importance for class '2' (if present)
+	unique_labels = set(y_test.unique())
+	if 2 in unique_labels:
+		scorer = make_scorer(recall_score, labels=[2], average='macro')
+		class2_result = permutation_importance(model, X_test, y_test, scoring=scorer, n_repeats=30, random_state=random_state)
+		class2_importances = pd.Series(class2_result.importances_mean, index=X.columns).sort_values(ascending=False)
+		csv_path = os.path.join(out_dir_abspath, "feature_importances_class2_permutation.csv")
+		class2_importances.to_csv(csv_path, header=["importance"])
+		plt.figure(figsize=(8, max(4, len(class2_importances) * 0.2)))
+		class2_importances.head(30).sort_values().plot(kind='barh', color='C2')
+		plt.title('Permutation importances for recall of class 2')
+		plt.xlabel('Decrease in recall (mean over repeats)')
+		plt.tight_layout()
+		png_path = os.path.join(out_dir_abspath, "feature_importances_class2_permutation.png")
+		plt.savefig(png_path)
+		plt.close()
+		print(f"Saved class-2 permutation importances to: {csv_path} and {png_path}")
 
-    for i, feat in enumerate(top_features):
-        ax = axes[i]
-        try:
-            if y_ser.nunique() <= 10:
-                # Categorical target: boxplot per class
-                data = [dfX.loc[y_ser == lab, feat].dropna() for lab in sorted(y_ser.unique())]
-                ax.boxplot(data, labels=[str(l) for l in sorted(y_ser.unique())])
-                ax.set_title(f"{feat} by class")
-                ax.set_ylabel(feat)
-            else:
-                # Numeric target: scatter
-                ax.scatter(dfX[feat], y_ser, alpha=0.6)
-                ax.set_xlabel(feat)
-                ax.set_ylabel('target')
-                ax.set_title(f"{feat} vs target")
-        except Exception as exc:
-            ax.text(0.5, 0.5, f"Error plotting {feat}: {exc}", ha='center')
-
-    # Turn off unused axes
-    for j in range(i + 1, len(axes)):
-        axes[j].axis('off')
-
-    plt.tight_layout()
-    if savepath:
-        os.makedirs(os.path.dirname(savepath), exist_ok=True)
-        fig.savefig(savepath, dpi=150, bbox_inches='tight')
-    return fig, top_features
+	# Print top features to console
+	print('\nTop features by permutation importance:')
+	print(perm_importances.head(20))
+	if model_importances is not None:
+		print('\nTop features by model.feature_importances_:')
+		print(model_importances.head(20))
 
 
 if __name__ == '__main__':
-    # Quick demo: load GOAT.joblib and show Gini importances if feature names available
-    model_path = os.path.join(os.path.dirname(__file__), 'GOAT.joblib')
-    if os.path.exists(model_path):
-        clf = load_model(model_path)
-        print('Loaded model; feature_importances_ present:', hasattr(clf, 'feature_importances_'))
-    else:
-        print('No GOAT.joblib found in module directory.')
+	compute_and_save_importances()
