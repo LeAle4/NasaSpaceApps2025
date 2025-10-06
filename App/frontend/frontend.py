@@ -1383,6 +1383,53 @@ class MainWindow(QMainWindow):
                 'apply_smotenc': False
             }
 
+    def _find_koi_disposition_column(self, df: pd.DataFrame) -> str | None:
+        """Try to find a column that represents koi_disposition.
+
+        Returns the column name if found, otherwise None.
+        The search is case-insensitive and ignores surrounding whitespace.
+        """
+        if df is None:
+            return None
+        candidates = [c for c in df.columns]
+        lowered = {c.strip().lower(): c for c in candidates}
+        # common exact name
+        if 'koi_disposition' in lowered:
+            return lowered['koi_disposition']
+        # try alternatives
+        for alt in ('disposition', 'koi disposition', 'koi_dispo', 'koi_state'):
+            if alt in lowered:
+                return lowered[alt]
+        # fallback: look for column names that end with 'disposition'
+        for name in lowered:
+            if name.endswith('disposition'):
+                return lowered[name]
+        return None
+
+    def _candidate_mask_from_column(self, df: pd.DataFrame, col: str) -> pd.Series:
+        """Return a boolean Series marking candidate rows (value == 0).
+
+        Handles numeric and string representations (e.g., '0', 'candidate', 'CAND').
+        """
+        try:
+            series = df[col]
+        except Exception:
+            return pd.Series([False] * len(df), index=df.index)
+
+        # Normalize and try numeric comparison first
+        try:
+            num = pd.to_numeric(series, errors='coerce')
+            mask = (num == 0)
+            if mask.any():
+                return mask.fillna(False)
+        except Exception:
+            pass
+
+        # Fall back to string matching for common candidate indicators
+        s = series.astype(str).str.strip().str.lower()
+        mask = s.isin(['0', 'candidate', 'cand', 'c', 'unknown'])
+        return mask
+
     def load_current_dataset_page(self):
         """Render current dataset page into the QTableWidget and update nav state."""
         if self._dataset_df is None or self._dataset_df.empty:
@@ -1502,11 +1549,23 @@ class MainWindow(QMainWindow):
         cand_lab_path = None
 
         try:
-            # If separation requested and koi_disposition exists, run pipeline separately
-            if separate and 'koi_disposition' in df.columns:
-                candidates_mask = (df['koi_disposition'] == 0)
-                noncand_df = df[~candidates_mask].copy()
-                cand_df = df[candidates_mask].copy()
+            # If separation requested, try to find a koi_disposition-like column robustly
+            if separate:
+                label_col = self._find_koi_disposition_column(df)
+            else:
+                label_col = None
+
+            if label_col is not None:
+                candidates_mask = self._candidate_mask_from_column(df, label_col)
+                if candidates_mask.any():
+                    noncand_df = df[~candidates_mask].copy()
+                    cand_df = df[candidates_mask].copy()
+                else:
+                    # no detected candidate rows
+                    QMessageBox.information(self, "No candidates found", "No candidate rows (koi_disposition==0) were detected in the dataset. Running a single pipeline on the full dataset.")
+                    label_col = None
+
+            if label_col is not None:
 
                 # Run pipeline on non-candidates
                 try:
