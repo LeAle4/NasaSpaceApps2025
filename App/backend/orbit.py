@@ -7,6 +7,29 @@ from vispy import app, scene
 from vispy.scene import visuals
 import vispy.geometry as geometry
 
+# Global registry to retain strong references and contexts per canvas
+_ORBIT_CANVAS_REGISTRY = {}
+
+def _dispose_canvas(canvas_id):  # pragma: no cover
+    entry = _ORBIT_CANVAS_REGISTRY.pop(canvas_id, None)
+    if not entry:
+        return
+    t = entry.get('timer')
+    if t is not None:
+        try:
+            t.stop()
+        except Exception:
+            pass
+    wd = entry.get('watchdog')
+    if wd is not None:
+        try:
+            wd.stop()
+        except Exception:
+            pass
+    # Optionally clear other references
+    for k in list(entry.keys()):
+        entry[k] = None
+
 # Make VisPy use PyQt5 backend
 app.use_app('pyqt5')
 
@@ -378,7 +401,7 @@ def create_habitable_zone(parent_scene, scale, inner_au, outer_au, exoplanet_inc
     }
 
 def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False,
-                     parent=None, run_app=True):
+                     parent=None, run_app=True, debug=False):
     """Render (or embed) an exoplanet orbit visualization.
 
     Parameters:
@@ -398,18 +421,48 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     """
     row = df.loc[row_index] if row_index in df.index else df.iloc[row_index]
 
+    def _finite(val, default):
+        try:
+            v = float(val)
+            if not np.isfinite(v):
+                return default
+            return v
+        except Exception:
+            return default
+
     # KOI data
-    P_days = float(row.get('koi_period',1.0)); P_sec = P_days*DAY
-    M_star = float(row.get('koi_smass',1.0))*M_SUN
-    a_m = float(row.get('koi_sma',np.nan)) * AU if not pd.isna(row.get('koi_sma',np.nan)) else (G*M_star*P_sec**2/(4*np.pi**2))**(1/3)
-    e = float(row.get('koi_eccen',0.0) or 0.0)
-    i_deg = float(row.get('koi_incl',90.0) or 90.0)
-    omega_deg = float(row.get('koi_longp',0.0) or 0.0)
+    P_days = _finite(row.get('koi_period',1.0), 1.0)
+    if P_days <= 0: P_days = 1.0
+    P_sec = P_days*DAY
+    M_star = _finite(row.get('koi_smass',1.0), 1.0)*M_SUN
+    raw_koi_sma = row.get('koi_sma', np.nan)
+    if pd.isna(raw_koi_sma) or not np.isfinite(raw_koi_sma) or raw_koi_sma <= 0:
+        # Derive from Kepler's 3rd law
+        a_m = (G*M_star*P_sec**2/(4*np.pi**2))**(1/3)
+        derived = True
+    else:
+        a_m = float(raw_koi_sma) * AU
+        derived = False
+    # Clamp a_m to reasonable astrophysical range to keep visualization stable
+    min_a = 0.01 * AU  # 0.01 AU
+    max_a = 50.0 * AU  # 50 AU
+    if a_m < min_a:
+        if debug: print(f"[orbit] a_m {a_m/AU:.4f} AU < {min_a/AU} AU; clamping")
+        a_m = min_a
+    if a_m > max_a:
+        if debug: print(f"[orbit] a_m {a_m/AU:.2f} AU > {max_a/AU} AU; clamping")
+        a_m = max_a
+    e = _finite(row.get('koi_eccen',0.0) or 0.0, 0.0)
+    if not (0 <= e < 1):
+        if debug: print(f"[orbit] invalid eccentricity {e}; resetting to 0.0")
+        e = 0.0
+    i_deg = _finite(row.get('koi_incl',90.0) or 90.0, 90.0)
+    omega_deg = _finite(row.get('koi_longp',0.0) or 0.0, 0.0)
     Omega_deg = 0.0
     M0 = 0.0
-    star_r_m = float(row.get('koi_srad',1.0) or 1.0)*R_SUN
-    planet_r_m = float(row.get('koi_prad',1.0) or 1.0)*R_EARTH
-    teff = float(row.get('koi_steff',5778.0) or 5778.0)
+    star_r_m = _finite(row.get('koi_srad',1.0) or 1.0, 1.0)*R_SUN
+    planet_r_m = _finite(row.get('koi_prad',1.0) or 1.0, 1.0)*R_EARTH
+    teff = _finite(row.get('koi_steff',5778.0) or 5778.0, 5778.0)
     star_rgb = temp_to_rgb(teff)
     # --- Habitable zone estimation ---
     star_radius_rel = (star_r_m / R_SUN)
@@ -421,8 +474,25 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
 
     # Automatic scaling
     scale = 1.0 / (1.5 * a_m)
+    # Clamp scale so objects don't become sub-pixel or enormous
+    # Based on a_m range above this keeps scale within ~[1/(1.5*50AU), 1/(1.5*0.01AU)]
+    min_scale = 1.0 / (1.5 * max_a)
+    max_scale = 1.0 / (1.5 * min_a)
+    if scale < min_scale:
+        if debug: print(f"[orbit] scale {scale:.3e} < min_scale {min_scale:.3e}; clamping")
+        scale = min_scale
+    if scale > max_scale:
+        if debug: print(f"[orbit] scale {scale:.3e} > max_scale {max_scale:.3e}; clamping")
+        scale = max_scale
     star_vis_radius = max(0.02, star_r_m*scale*5)
     planet_vis_radius = max(0.005, planet_r_m*scale*50)
+    # Additional upper bound so star glow doesn't engulf everything
+    if star_vis_radius > 0.5:
+        if debug: print(f"[orbit] star_vis_radius {star_vis_radius:.3f} too large; capping")
+        star_vis_radius = 0.5
+    if planet_vis_radius > 0.2:
+        if debug: print(f"[orbit] planet_vis_radius {planet_vis_radius:.3f} too large; capping")
+        planet_vis_radius = 0.2
 
     # Orbit points
     ts = np.linspace(0,P_sec,512)
@@ -482,12 +552,16 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     star_mass_label = QLabel(f"Star Mass: {star_mass_value:.2f} M☉")
     star_radius_label = QLabel(f"Star Radius: {star_radius_value:.2f} R☉")
     planet_radius_label = QLabel(f"Planet Radius: {planet_radius_value:.2f} R⊕")
+    ra_label = QLabel(f"RA: {row.get('ra', 0.0):.6f}°")
+    dec_label = QLabel(f"Dec: {row.get('dec', 0.0):.6f}°")
     temp_label = QLabel(f"Temperature: {teff:.0f} K")
     
     data_layout.addWidget(period_label)
     data_layout.addWidget(star_mass_label)
     data_layout.addWidget(star_radius_label)
     data_layout.addWidget(planet_radius_label)
+    data_layout.addWidget(ra_label)
+    data_layout.addWidget(dec_label)
     data_layout.addWidget(temp_label)
     # Let it size to content (we'll position later)
     data_frame.adjustSize()
@@ -675,6 +749,19 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
                                        parent=view.scene)
     exoplanet_label.transform = scene.transforms.MatrixTransform()
 
+    # ---- Initial placement before timer starts (prevents planet hidden at origin) ----
+    initial_exo_pos = orbital_position_vector(a_m, e, i_deg, omega_deg, Omega_deg, M0, 0.0, P_sec)
+    initial_scaled = initial_exo_pos * scale
+    # If initial position would place planet inside star glow, shift along +X
+    if np.linalg.norm(initial_scaled) < star_vis_radius * 1.2:
+        if debug: print("[orbit] initial planet position inside star glow; offsetting")
+        initial_scaled = np.array([star_vis_radius * 2.5, 0.0, 0.0])
+    planet.transform.reset(); planet.transform.translate(tuple(initial_scaled))
+    planet_atmosphere.transform.reset(); planet_atmosphere.transform.translate(tuple(initial_scaled))
+    init_label_pos = initial_scaled + np.array([planet_vis_radius * 3, planet_vis_radius * 2, planet_vis_radius])
+    exoplanet_label.transform.reset(); exoplanet_label.transform.translate(init_label_pos)
+    # ----------------------------------------------------------------------------
+
     # Initialize solar system planets (create if initially enabled)
     solar_system_planets = {}
     habitable_zone_objects = None
@@ -722,65 +809,85 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     # Animation with unified time scale
     time_sim = 0.0
     def update(ev):
+        """Per-frame animation update with exception safety.
+
+        A silent exception could stop the vispy Timer leading to a frozen scene.
+        We catch and log (when debug) while keeping the timer alive.
+        """
         nonlocal time_sim
-        dt = ev.dt * speed * DAY  # Same time scaling for all objects
-        time_sim += dt
-        
-        # Update exoplanet orbital position
-        exo_pos = orbital_position_vector(a_m,e,i_deg,omega_deg,Omega_deg,M0,time_sim,P_sec)
-        scaled_pos = tuple(exo_pos * scale)
-        
-        # Update planet position
-        planet.transform.reset()
-        planet.transform.translate(scaled_pos)
-        
-        # Update atmosphere position (follows planet)
-        planet_atmosphere.transform.reset()
-        planet_atmosphere.transform.translate(scaled_pos)
-        
-        # Update exoplanet label position (upper right of exoplanet)
-        exoplanet_label_pos = np.array(scaled_pos) + np.array([planet_vis_radius * 3, planet_vis_radius * 2, planet_vis_radius])
-        exoplanet_label.transform.reset()
-        exoplanet_label.transform.translate(exoplanet_label_pos)
-        
-        # Update solar system planets if showing and visible - using SAME time scale
-        if show_solar_system and solar_system_planets:
-            for planet_name, planet_data in solar_system_planets.items():
-                if not planet_data['visual'].visible:
-                    continue  # Skip if planet is hidden
-                    
-                planet_obj = planet_data['visual']
-                label_obj = planet_data['label']
-                data = planet_data['data']
-                
-                # Use the orbital elements for proper animation with SAME time scale
-                a_m_solar = data['semi_major_axis']
-                e_solar = data['eccentricity']
-                i_deg_solar = data['inclination']
-                omega_deg_solar = 0.0  # Simplified
-                Omega_deg_solar = 0.0  # Simplified
-                M0_solar = planet_data['initial_M']
-                P_sec_solar = data['period']
-                
-                # Calculate new orbital position using SAME time_sim (unified time scale)
-                solar_pos_3d = orbital_position_vector(a_m_solar, e_solar, i_deg_solar, 
-                                                     omega_deg_solar, Omega_deg_solar, 
-                                                     M0_solar, time_sim, P_sec_solar)
-                solar_pos = solar_pos_3d * scale  # Use same scale as exoplanet
-                
-                # Update planet position
-                planet_obj.transform.reset()
-                planet_obj.transform.translate(solar_pos)
-                
-                # Update label position (upper right offset from planet)
-                solar_planet_radius = data['radius'] * scale * 50  # Same scaling as creation
-                label_offset = solar_pos + np.array([solar_planet_radius * 3, solar_planet_radius * 2, solar_planet_radius])
-                label_obj.pos = label_offset
-        
-        canvas.update()
+        try:
+            dt_raw = getattr(ev, 'dt', 1/60.0)
+            if not np.isfinite(dt_raw) or dt_raw <= 0:
+                dt_raw = 1/60.0
+            dt = dt_raw * speed * DAY  # Unified time scaling
+            time_sim += dt
+
+            # Update exoplanet orbital position
+            exo_pos = orbital_position_vector(a_m,e,i_deg,omega_deg,Omega_deg,M0,time_sim,P_sec)
+            scaled_pos = tuple(exo_pos * scale)
+
+            # Update planet & atmosphere
+            planet.transform.reset(); planet.transform.translate(scaled_pos)
+            planet_atmosphere.transform.reset(); planet_atmosphere.transform.translate(scaled_pos)
+
+            # Update exoplanet label
+            exoplanet_label_pos = np.array(scaled_pos) + np.array([planet_vis_radius * 3, planet_vis_radius * 2, planet_vis_radius])
+            exoplanet_label.transform.reset(); exoplanet_label.transform.translate(exoplanet_label_pos)
+
+            # Solar system planets
+            if show_solar_system and solar_system_planets:
+                for planet_name, planet_data in solar_system_planets.items():
+                    if not planet_data['visual'].visible:
+                        continue
+                    data = planet_data['data']
+                    a_m_solar = data['semi_major_axis']
+                    e_solar = data['eccentricity']
+                    i_deg_solar = data['inclination']
+                    omega_deg_solar = 0.0
+                    Omega_deg_solar = 0.0
+                    M0_solar = planet_data['initial_M']
+                    P_sec_solar = data['period']
+                    solar_pos_3d = orbital_position_vector(a_m_solar, e_solar, i_deg_solar,
+                                                           omega_deg_solar, Omega_deg_solar,
+                                                           M0_solar, time_sim, P_sec_solar)
+                    solar_pos = solar_pos_3d * scale
+                    planet_obj = planet_data['visual']
+                    label_obj = planet_data['label']
+                    planet_obj.transform.reset(); planet_obj.transform.translate(solar_pos)
+                    solar_planet_radius = data['radius'] * scale * 50
+                    label_offset = solar_pos + np.array([solar_planet_radius * 3, solar_planet_radius * 2, solar_planet_radius])
+                    label_obj.pos = label_offset
+
+            canvas.update()
+        except Exception as exc:  # pragma: no cover
+            if debug:
+                print(f"[orbit] update exception: {exc}")
+            # Keep timer alive; optionally could implement backoff
 
     timer = app.Timer(interval=1/60.0, connect=update, start=True)
-    print(f"Rendering KOI {row.get('kepid','Unknown')} with P={P_days:.2f}d, a={a_m/AU:.3f} AU, e={e:.3f}, i={i_deg:.1f}°")
+    # Strong reference registry (avoid adding attributes to frozen SceneCanvas)
+    global _ORBIT_CANVAS_REGISTRY
+    _ORBIT_CANVAS_REGISTRY[id(canvas)] = {
+        'update': update,
+        'timer': timer,
+        'frame_counter': 0,
+        'last_seen_frames': 0
+    }
+
+    # Frame counter increment inside update via closure modification
+    def _wrap_update(orig_update):
+        def _u(ev):
+            entry = _ORBIT_CANVAS_REGISTRY.get(id(canvas))
+            if entry is not None:
+                entry['frame_counter'] += 1
+            orig_update(ev)
+        return _u
+    # Reconnect timer with wrapped update for frame counting
+    timer.disconnect(update)
+    wrapped = _wrap_update(update)
+    timer.connect(wrapped)
+    _ORBIT_CANVAS_REGISTRY[id(canvas)]['wrapped_update'] = wrapped
+    print(f"Rendering KOI {row.get('kepid','Unknown')} with P={P_days:.2f}d, a={a_m/AU:.3f} AU, e={e:.3f}, i={i_deg:.1f}°" + (" (a derived)" if derived else ""))
     print(f"Star: T={teff:.0f}K, R={star_r_m/R_SUN:.2f} R☉ (with layered glow effects)")
     print(f"Planet: R={planet_r_m/R_EARTH:.2f} R⊕ (with atmosphere)")
     
@@ -807,8 +914,36 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
         'star_components': star_components,
         'speed': speed,
         'show_solar_system': show_solar_system,
-        'show_habitable_zone': show_habitable_zone
+        'show_habitable_zone': show_habitable_zone,
+        'resume': lambda: (_ORBIT_CANVAS_REGISTRY.get(id(canvas), {}).get('timer').start()
+                           if _ORBIT_CANVAS_REGISTRY.get(id(canvas), {}).get('timer') is not None and not _ORBIT_CANVAS_REGISTRY.get(id(canvas), {}).get('timer').running else None),
+        'pause': lambda: _ORBIT_CANVAS_REGISTRY.get(id(canvas), {}).get('timer').stop() if _ORBIT_CANVAS_REGISTRY.get(id(canvas), {}).get('timer') is not None else None,
+        'dispose': lambda: _dispose_canvas(id(canvas))
     }
+    # Also store context in registry
+    _ORBIT_CANVAS_REGISTRY[id(canvas)]['context'] = context
+
+    # Watchdog timer to restart animation if frames stop increasing (e.g., exception or GC edge)
+    from PyQt5.QtCore import QTimer as _QTimer
+    def watchdog_check():  # pragma: no cover
+        entry = _ORBIT_CANVAS_REGISTRY.get(id(canvas))
+        if not entry:
+            return
+        fc = entry['frame_counter']
+        if fc == entry['last_seen_frames']:
+            # No new frames -> attempt restart
+            if debug:
+                print('[orbit] Watchdog detected stalled animation; restarting timer')
+            t = entry.get('timer')
+            if t is not None:
+                t.stop(); t.start()
+        entry['last_seen_frames'] = fc
+    watchdog = _QTimer()
+    watchdog.setInterval(1500)
+    watchdog.timeout.connect(watchdog_check)
+    watchdog.start()
+    _ORBIT_CANVAS_REGISTRY[id(canvas)]['watchdog'] = watchdog
+
     if parent is not None:
         return context
 
@@ -817,13 +952,13 @@ def render_koi_orbit(df, row_index=0, speed=1.0, show_solar_system=False, show_h
     return context
 
 def create_instance(df, row_index=0, speed=1.0, show_solar_system=False, show_habitable_zone=False,
-                    parent=None, run_app=True):
+                    parent=None, run_app=True, debug=False):
     return render_koi_orbit(df, row_index=row_index, speed=speed,
                             show_solar_system=show_solar_system,
                             show_habitable_zone=show_habitable_zone,
-                            parent=parent, run_app=run_app)
+                            parent=parent, run_app=run_app, debug=debug)
 
-def create_child_widget(df, row_index=0, speed=1.0, show_solar_system=True, show_habitable_zone=True, parent=None):
+def create_child_widget(df, row_index=0, speed=1.0, show_solar_system=True, show_habitable_zone=True, parent=None, debug=False):
     """Convenience helper for frontend embedding.
 
     Returns context dict (see render_koi_orbit) and does not start the global event loop.
@@ -833,7 +968,7 @@ def create_child_widget(df, row_index=0, speed=1.0, show_solar_system=True, show
     return render_koi_orbit(df, row_index=row_index, speed=speed,
                              show_solar_system=show_solar_system,
                              show_habitable_zone=show_habitable_zone,
-                             parent=parent, run_app=False)
+                             parent=parent, run_app=False, debug=debug)
 
 # Example usage
 if __name__=='__main__':

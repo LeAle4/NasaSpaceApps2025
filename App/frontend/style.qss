@@ -1,0 +1,182 @@
+/* =======================
+   Global Dark Theme
+   ======================= */
+QWidget {
+    background-color: #121212;
+    color: #E0E0E0;
+    font-family: "Segoe UI", Arial, sans-serif;
+    font-size: 11pt;
+    padding: 2px;
+}
+
+/* =======================
+   Main Window & Tabs
+   ======================= */
+QMainWindow {
+    background-color: #121212;
+}
+
+QTabWidget::pane {
+    border: 1px solid #333;
+    background: #1E1E1E;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+QTabBar::tab {
+    background: #2A2A2A;
+    color: #BBBBBB;
+    padding: 12px 20px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    margin-right: 2px;
+}
+
+QTabBar::tab:selected {
+    background: #3C3C3C;
+    color: #FFFFFF;
+    font-weight: bold;
+}
+
+QTabBar::tab:hover {
+    background: #444444;
+    color: #FFFFFF;
+}
+
+/* =======================
+   Frames
+   ======================= */
+QFrame {
+    border: 1px solid #333;
+    border-radius: 8px;
+    background-color: #1C1C1C;
+}
+
+/* =======================
+   Buttons
+   ======================= */
+QPushButton {
+    background-color: #2D2D2D;
+    color: #E0E0E0;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 8px 14px;
+    min-height: 28px;
+}
+
+QPushButton:hover {
+    background-color: #3E3E3E;
+    border: 1px solid #666;
+}
+
+QPushButton:pressed {
+    background-color: #555555;
+    border: 1px solid #777;
+}
+
+QPushButton:disabled {
+    background-color: #1A1A1A;
+    color: #666666;
+    border: 1px solid #222;
+}
+
+/* Special orbit visualization button (already styled in code) */
+QPushButton#btn_visualize_orbit {
+    background-color: #4CAF50;
+    color: white;
+    font-weight: bold;
+}
+QPushButton#btn_visualize_orbit:hover {
+    background-color: #45a049;
+}
+
+/* =======================
+   Tables
+   ======================= */
+QHeaderView::section {
+    background-color: #2A2A2A;
+    color: #CCCCCC;
+    padding: 6px 10px;
+    border: 1px solid #333;
+}
+
+QTableWidget {
+    background-color: #1C1C1C;
+    alternate-background-color: #252525;
+    gridline-color: #333333;
+    selection-background-color: #3D6FB4;
+    selection-color: white;
+    padding: 4px;
+}
+
+/* =======================
+   Inputs
+   ======================= */
+QLineEdit, QComboBox, QSpinBox {
+    background-color: #1E1E1E;
+    color: #E0E0E0;
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 6px 8px;
+    min-height: 24px;
+}
+
+QLineEdit:focus, QComboBox:focus, QSpinBox:focus {
+    border: 1px solid #3D6FB4;
+    background-color: #2A2A2A;
+}
+
+/* =======================
+   Scrollbars
+   ======================= */
+QScrollBar:vertical {
+    border: none;
+    background: #1A1A1A;
+    width: 10px;
+    margin: 0px;
+}
+
+QScrollBar::handle:vertical {
+    background: #444;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background: #666;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+}
+
+QScrollBar:horizontal {
+    border: none;
+    background: #1A1A1A;
+    height: 10px;
+    margin: 0px;
+}
+
+QScrollBar::handle:horizontal {
+    background: #444;
+    border-radius: 5px;
+}
+
+QScrollBar::handle:horizontal:hover {
+    background: #666;
+}
+
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {
+    width: 0;
+}
+
+/* =======================
+   Status Bar
+   ======================= */
+QStatusBar {
+    background-color: #1E1E1E;
+    color: #BBBBBB;
+    border-top: 1px solid #333;
+    padding: 2px;
+}
