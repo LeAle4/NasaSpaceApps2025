@@ -430,8 +430,18 @@ class Database():
     def __init__(self):
         self.allConfirmedExoplanets = pd.DataFrame()
         self.allRejectedExoplanets = pd.DataFrame()
-        self.confirmed_file_path = "confirmed_exoplanets_data.csv"  # Archivo para persistencia
-        self.rejected_file_path = "rejected_exoplanets_data.csv"
+        self.confirmed_file_path = None
+        self.rejected_file_path = None 
+        self.get_database_path()
+    
+    def get_database_path(self):
+        current_file = os.path.abspath(__file__)
+        backend_dir = os.path.dirname(current_file)
+        project_root = os.path.dirname(backend_dir)
+        database_dir = os.path.join(project_root, "DataBase")
+        os.makedirs(database_dir, exist_ok=True)
+        self.confirmed_file_path = os.path.join(database_dir, "confirmed_exoplanets_data.csv")
+        self.rejected_file_path = os.path.join(database_dir, "rejected_exoplanets_data.csv")
         
     def loadAllDatabase(self):
         """Load persisted confirmed/rejected CSVs into memory.
