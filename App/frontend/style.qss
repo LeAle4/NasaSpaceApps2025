@@ -21,21 +21,24 @@ QTabWidget::pane {
     background: #1E1E1E;
     border-radius: 6px;
     padding: 6px;
+    margin-right: 2px;
+    
 }
 
+/* =======================
+   Tabs (fix clipping)
+   ======================= */
 QTabBar::tab {
     background: #2A2A2A;
     color: #BBBBBB;
     padding: 12px 20px;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
-    margin-right: 2px;
 }
 
 QTabBar::tab:selected {
     background: #3C3C3C;
     color: #FFFFFF;
-    font-weight: bold;
 }
 
 QTabBar::tab:hover {
