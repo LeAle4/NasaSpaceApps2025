@@ -451,22 +451,7 @@ class MainWindow(QMainWindow):
         self.btn_visualize_orbit = QPushButton('🌍 Visualize Orbit')
         self.btn_visualize_orbit.setEnabled(False)
         self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
-        self.btn_visualize_orbit.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
+        
         self.orbit_button_layout.addStretch()
         self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
         self.orbit_button_layout.addStretch()
