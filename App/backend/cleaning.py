@@ -22,7 +22,7 @@ MAX_MISSING_VALUES = 0.5
 # Max colinearity threshold
 MAX_COLINEARITY = 0.80
 # Flag to apply scaling (StandardScaler; mean=0, std=1)
-APPLY_SCALER = False
+APPLY_SCALER = True
 # Flag to apply Gaussian noise
 APPLY_NOISE = False
 # Flag to apply SMOTENC (oversampling for categorical+numerical data)

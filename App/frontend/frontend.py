@@ -180,6 +180,66 @@ class MainWindow(QMainWindow):
         # QTabWidget para las pestañas
         self.tabWidget = QTabWidget(self.centralwidget)
         self.tabWidget.setObjectName("tabWidget")
+
+        # ========== PESTAÑA DE DATA PROCESSING (NEW, LEFT-MOST) ==========
+        self.tabDataProcessing = QWidget()
+        self.tabDataProcessing.setObjectName("tabDataProcessing")
+        self.dpLayout = QVBoxLayout(self.tabDataProcessing)
+
+        self.labelDataProcessing = QLabel("Data Processing:")
+        self.labelDataProcessing.setFont(QFont("Arial", 12))
+        self.labelDataProcessing.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.dpLayout.addWidget(self.labelDataProcessing)
+
+        # Controls: select file, load file
+        self.dp_controls_frame = QFrame()
+        self.dp_controls_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dp_controls_frame.setLineWidth(2)
+        self.dp_controls_layout = QHBoxLayout(self.dp_controls_frame)
+
+        self.dataset_path_label = QLabel("<no file selected>")
+        self.dataset_path_label.setMinimumWidth(300)
+        self.dp_controls_layout.addWidget(self.dataset_path_label)
+
+        self.btn_select_dataset = QPushButton('Select Dataset')
+        self.btn_select_dataset.clicked.connect(self.select_dataset_file)
+        self.dp_controls_layout.addWidget(self.btn_select_dataset)
+
+        self.btn_load_dataset = QPushButton('Load Dataset')
+        self.btn_load_dataset.clicked.connect(self.load_dataset_clicked)
+        self.btn_load_dataset.setEnabled(False)
+        self.dp_controls_layout.addWidget(self.btn_load_dataset)
+
+        self.btn_clear_dataset = QPushButton('Clear Dataset')
+        self.btn_clear_dataset.clicked.connect(self.clear_dataset)
+        self.btn_clear_dataset.setEnabled(False)
+        self.dp_controls_layout.addWidget(self.btn_clear_dataset)
+
+        self.dp_controls_layout.addStretch()
+        self.dpLayout.addWidget(self.dp_controls_frame)
+
+        # Preview table
+        self.dp_preview_frame = QFrame()
+        self.dp_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dp_preview_frame.setLineWidth(2)
+        self.dp_preview_layout = QVBoxLayout(self.dp_preview_frame)
+
+        self.label_dp_preview = QLabel("Dataset preview:")
+        self.dp_preview_layout.addWidget(self.label_dp_preview)
+
+        self.table_dp_preview = QTableWidget()
+        self.table_dp_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_dp_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_dp_preview.setAlternatingRowColors(True)
+        self.dp_preview_layout.addWidget(self.table_dp_preview)
+
+        self.dpLayout.addWidget(self.dp_preview_frame)
+
+        # Dataset storage
+        self.Dataset = None  # pandas DataFrame loaded via Data Processing tab
+
+        # Insert Data Processing as the first tab
+        self.tabWidget.addTab(self.tabDataProcessing, "Data Processing")
         
         # ========== PESTAÑA DE MODELOS ==========
         self.tabModelos = QWidget()
@@ -1099,7 +1159,12 @@ class MainWindow(QMainWindow):
             return {'n_estimators': 100, 'max_depth': None, 'random_state': None, 'n_jobs': 1}
 
     def select_dataset_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select dataset CSV", "", "CSV Files (*.csv);;All files (*)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select dataset file",
+            "",
+            "Table files (*.csv *.tsv *.tab *.vot *.votable *.xml *.tbl);;CSV Files (*.csv);;All files (*)"
+        )
         if not file_path:
             return
         self._dataset_path = file_path
@@ -1139,9 +1204,26 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", f"Failed to load dataset:\n{msg}")
             return
 
+        # Store dataset for Data Processing tab and training preview
         self._dataset_df = df
+        self.Dataset = df.copy()
         self.statusbar.showMessage(f"Dataset loaded: {len(df)} rows", 2000)
-        self.display_dataset_preview(df)
+
+        # Display in both dataset preview (training tab) and Data Processing preview
+        try:
+            self.display_dataset_preview(df)
+        except Exception:
+            pass
+        try:
+            self.display_dp_preview(df)
+        except Exception:
+            pass
+
+        # Enable clear button on Data Processing tab
+        try:
+            self.btn_clear_dataset.setEnabled(True)
+        except Exception:
+            pass
 
     def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
         """Store the dataset and render page 0 into the preview table."""
@@ -1163,6 +1245,42 @@ class MainWindow(QMainWindow):
             self.dataset_pagination_widget.setVisible(False)
 
         self.load_current_dataset_page()
+
+    def display_dp_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
+        """Render a small preview of the Data Processing dataset into the DP preview table."""
+        if dataframe is None or dataframe.empty:
+            self.Dataset = None
+            self.table_dp_preview.setRowCount(0)
+            self.table_dp_preview.setColumnCount(0)
+            return
+
+        df = dataframe if len(dataframe) <= max_rows else dataframe.head(max_rows)
+        self.table_dp_preview.setRowCount(len(df))
+        self.table_dp_preview.setColumnCount(len(df.columns))
+        self.table_dp_preview.setHorizontalHeaderLabels(df.columns.tolist())
+
+        for i in range(len(df)):
+            for j, col in enumerate(df.columns):
+                item = QTableWidgetItem(str(df.iloc[i, j]))
+                self.table_dp_preview.setItem(i, j, item)
+
+        self.table_dp_preview.resizeColumnsToContents()
+
+    def clear_dataset(self):
+        """Clear the Data Processing dataset from UI and memory."""
+        self.Dataset = None
+        # also clear the training-preview dataset variable if it matches
+        try:
+            self._dataset_df = None
+        except Exception:
+            pass
+        self.table_dp_preview.setRowCount(0)
+        self.table_dp_preview.setColumnCount(0)
+        self.table_dataset_preview.setRowCount(0)
+        self.table_dataset_preview.setColumnCount(0)
+        self.label_dp_preview.setText("Dataset preview:")
+        self.label_dataset_preview.setText("Dataset preview:")
+        self.btn_clear_dataset.setEnabled(False)
 
     def load_current_dataset_page(self):
         """Render current dataset page into the QTableWidget and update nav state."""
