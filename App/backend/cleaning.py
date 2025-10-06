@@ -32,6 +32,15 @@ DISCARD_ERROR_COLS = True
 # Numerical replacement for string categorical values
 STRING_CAT_REPLACEMENT = {'CONFIRMED': 1, 'CANDIDATE': 0, 'FALSE POSITIVE': -1}
 
+def separate_candidates(df: pd.DataFrame) -> pd.DataFrame:
+    """Separates candidate entries from the DataFrame.
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+    Returns:
+        pd.DataFrame: DataFrame of candidate entries.
+    """
+    return df[df[LABEL_COL] == 0]
+
 def split_features_labels(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Splits the DataFrame into features and labels.
     Args:
@@ -199,6 +208,57 @@ def pipeline(df: pd.DataFrame, label_col: str = LABEL_COL, discard_cols: list = 
         features (pd.DataFrame): The preprocessed feature DataFrame.
         labels (pd.Series): The label Series."""
     df = replace_string_values(df, replacements)
+    df = discard_columns(df, discard_cols)
+    df = discard_empty_columns(df)
+    df = discard_missing_values(df)
+    df = discard_constant_columns(df)
+    df = discard_string_columns(df)
+    df = discard_colinear_columns(df)
+    features, labels = split_features_labels(df)
+    features = fill_missing_values(features)
+    if apply_scaler and not apply_smotenc:
+        features = standardize_features(features)
+    if apply_noise:
+        features = add_gaussian_noise(features)
+    if discard_error_cols:
+        error_cols = [col for col in features.columns if any(col.endswith(suffix) for suffix in error_suffixes)]
+        features = discard_columns(features, error_cols)
+    if apply_smotenc:
+        categorical_cols = get_categorical_columns(features)
+        categorical_indices = [features.columns.get_loc(col) for col in categorical_cols]
+        smote = SMOTENC(categorical_features=categorical_indices, random_state=random_seed)
+        features_res, labels_res = smote.fit_resample(features, labels)
+        features = pd.DataFrame(features_res, columns=features.columns)
+        labels = pd.DataFrame(labels_res, columns=labels.columns)
+        if apply_scaler:
+            features = standardize_features(features)
+    return features, labels
+
+def candidates_pipeline(df: pd.DataFrame, label_col: str = LABEL_COL, discard_cols: list = DISCARD_COLS, random_seed: int = RANDOM_SEED,
+             error_suffixes: list = ERROR_SUFFIXES, noise_level: float = NOISE_LEVEL, max_cat_values: int = MAX_CAT_VALUES,
+             max_missing_values: float = MAX_MISSING_VALUES, max_collinearity: float = MAX_COLINEARITY,
+             apply_scaler: bool = APPLY_SCALER, apply_noise: bool = APPLY_NOISE,
+             apply_smotenc: bool = APPLY_SMOTENC, discard_error_cols: bool = DISCARD_ERROR_COLS,
+             replacements: dict = STRING_CAT_REPLACEMENT) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Comprehensive data preprocessing pipeline.
+    Args:
+        df (pd.DataFrame): The input DataFrame.
+        label_col (str): The name of the label column.
+        discard_cols (list): List of columns to discard.
+        random_seed (int): Random seed for reproducibility.
+        error_suffixes (list): List of suffixes indicating error columns.
+        noise_level (float): Noise level to be added to numerical features.
+        max_cat_values (int): Max number of distinct values for a column to be considered categorical.
+        max_missing_values (float): Percentage of data to be missing to discard a column.
+        max_collinearity (float): Max collinearity threshold.
+        apply_scaler (bool): Flag to apply scaling.
+        apply_noise (bool): Flag to apply Gaussian noise.
+        apply_smotenc (bool): Flag to apply SMOTENC oversampling.
+    Returns:
+        features (pd.DataFrame): The preprocessed feature DataFrame.
+        labels (pd.Series): The label Series."""
+    df = replace_string_values(df, replacements)
+    df = separate_candidates(df)
     df = discard_columns(df, discard_cols)
     df = discard_empty_columns(df)
     df = discard_missing_values(df)
