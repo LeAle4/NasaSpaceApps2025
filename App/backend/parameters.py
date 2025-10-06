@@ -18,4 +18,4 @@ DATA_HEADERS = ['ra', 'dec', 'koi_gmag', 'koi_count', 'koi_num_transits',
        'koi_fpflag_nt', 'koi_fpflag_ss', 'koi_fpflag_co', 'koi_fpflag_ec',
        'koi_insol', 'koi_srho']
 
-DATA_VISUALIZATION = ['kepid','koi_period','koi_time0bk','koi_smass','koi_srad','koi_prad','koi_sma','koi_eccen','koi_incl','koi_longp','koi_steff']
+DATA_VISUALIZATION = ['kepid','koi_period','koi_time0bk','koi_smass','koi_srad','koi_prad','koi_sma','koi_eccen','koi_incl','koi_longp','koi_steff', 'ra', 'dec']

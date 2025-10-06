@@ -45,5 +45,8 @@ class HopeFinderApp:
 
 if __name__ == "__main__":
     app = HopeFinderApp()
+    with open('frontend/style.qss', 'r') as f:
+        style = f.read()
+        app.app.setStyleSheet(style)
     app.connect_signals()
     app.run()
