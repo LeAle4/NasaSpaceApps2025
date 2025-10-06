@@ -8,9 +8,6 @@ import pandas as pd
 import os
 from backend.analysis import dataio
 from backend.cleaning import pipeline
-import tempfile
-import time
-
 
 class DataLoaderThread(QThread):
     """Background thread to load a DataFrame slice without blocking the UI.
@@ -1524,20 +1521,9 @@ class MainWindow(QMainWindow):
         apply_noise = bool(params.get('augment', False))
         apply_smotenc = bool(params.get('apply_smotenc', False))
 
-        try:
-            features_df, labels_df = pipeline(
-                df.copy(),
-                random_seed=int(params.get('random_seed', 42)),
-                noise_level=float(params.get('noise_level', 0.01)),
-                max_missing_values=float(params.get('max_missing', 0.5)),
-                max_collinearity=float(params.get('max_colinearity', 0.80)),
-                apply_scaler=apply_scaler,
-                apply_noise=apply_noise,
-                apply_smotenc=apply_smotenc,
-            )
-        except Exception as e:
-            QMessageBox.critical(self, "Pipeline error", f"Error running pipeline: {e}")
-            return
+        # We'll run the pipeline after deciding whether to separate candidates
+        features_df = None
+        labels_df = None
 
         # Prompt user where to save outputs instead of using a temp dir.
         params = params if 'params' in locals() else self.get_data_processing_params()
@@ -1552,6 +1538,16 @@ class MainWindow(QMainWindow):
             # If separation requested, try to find a koi_disposition-like column robustly
             if separate:
                 label_col = self._find_koi_disposition_column(df)
+                # fallback: if we couldn't find a label column by name, scan columns for candidate-like values
+                if label_col is None:
+                    for col in df.columns:
+                        try:
+                            mask = self._candidate_mask_from_column(df, col)
+                        except Exception:
+                            mask = pd.Series([False] * len(df), index=df.index)
+                        if mask.any():
+                            label_col = col
+                            break
             else:
                 label_col = None
 
