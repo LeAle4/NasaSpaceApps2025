@@ -218,19 +218,74 @@ class MainWindow(QMainWindow):
         self.dp_controls_layout.addStretch()
         self.dpLayout.addWidget(self.dp_controls_frame)
 
+        # Parameter controls for Data Processing
+        self.dp_params_frame = QFrame()
+        self.dp_params_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dp_params_frame.setLineWidth(2)
+        self.dp_params_layout = QGridLayout(self.dp_params_frame)
+
+        # MAX COLINEARITY (0.0 - 1.0)
+        lbl_col = QLabel("MAX COLINEARITY:")
+        self.dp_params_layout.addWidget(lbl_col, 0, 0)
+        self.spin_max_col = QDoubleSpinBox()
+        self.spin_max_col.setRange(0.0, 1.0)
+        self.spin_max_col.setSingleStep(0.01)
+        self.spin_max_col.setValue(0.95)
+        self.dp_params_layout.addWidget(self.spin_max_col, 0, 1)
+
+        # MAX MISSING VALUES (fraction 0.0 - 1.0)
+        lbl_miss = QLabel("MAX MISSING VALUES:")
+        self.dp_params_layout.addWidget(lbl_miss, 0, 2)
+        self.spin_max_missing = QDoubleSpinBox()
+        self.spin_max_missing.setRange(0.0, 1.0)
+        self.spin_max_missing.setSingleStep(0.01)
+        self.spin_max_missing.setValue(0.2)
+        self.dp_params_layout.addWidget(self.spin_max_missing, 0, 3)
+
+        # NOISE LEVEL (fraction)
+        lbl_noise = QLabel("NOISE LEVEL:")
+        self.dp_params_layout.addWidget(lbl_noise, 1, 0)
+        self.spin_noise = QDoubleSpinBox()
+        self.spin_noise.setRange(0.0, 1.0)
+        self.spin_noise.setSingleStep(0.01)
+        self.spin_noise.setValue(0.0)
+        self.dp_params_layout.addWidget(self.spin_noise, 1, 1)
+
+        # RANDOM SEED
+        lbl_seed = QLabel("RANDOM SEED:")
+        self.dp_params_layout.addWidget(lbl_seed, 1, 2)
+        self.spin_dp_seed = QSpinBox()
+        self.spin_dp_seed.setRange(-1, 999999)
+        self.spin_dp_seed.setValue(42)
+        self.dp_params_layout.addWidget(self.spin_dp_seed, 1, 3)
+
+        # AUGMENT checkbox
+        self.chk_augment = QCheckBox("AUGMENT")
+        self.chk_augment.setChecked(False)
+        self.dp_params_layout.addWidget(self.chk_augment, 2, 0)
+
+        # APPLY SMOTENC checkbox
+        self.chk_smotenc = QCheckBox("APPLY SMOTENC")
+        self.chk_smotenc.setChecked(False)
+        self.dp_params_layout.addWidget(self.chk_smotenc, 2, 1)
+
+        self.dpLayout.addWidget(self.dp_params_frame)
+
         # Preview table
         self.dp_preview_frame = QFrame()
         self.dp_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.dp_preview_frame.setLineWidth(2)
         self.dp_preview_layout = QVBoxLayout(self.dp_preview_frame)
 
-        self.label_dp_preview = QLabel("Dataset preview:")
+        self.label_dp_preview = QLabel("Dataset preview (first 50 rows):")
         self.dp_preview_layout.addWidget(self.label_dp_preview)
 
+        # smaller preview table to reduce UI footprint
         self.table_dp_preview = QTableWidget()
         self.table_dp_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_dp_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_dp_preview.setAlternatingRowColors(True)
+        self.table_dp_preview.setMaximumHeight(200)
         self.dp_preview_layout.addWidget(self.table_dp_preview)
 
         self.dpLayout.addWidget(self.dp_preview_frame)
@@ -1246,14 +1301,13 @@ class MainWindow(QMainWindow):
 
         self.load_current_dataset_page()
 
-    def display_dp_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
+    def display_dp_preview(self, dataframe: pd.DataFrame, max_rows: int = 50):
         """Render a small preview of the Data Processing dataset into the DP preview table."""
         if dataframe is None or dataframe.empty:
             self.Dataset = None
             self.table_dp_preview.setRowCount(0)
             self.table_dp_preview.setColumnCount(0)
             return
-
         df = dataframe if len(dataframe) <= max_rows else dataframe.head(max_rows)
         self.table_dp_preview.setRowCount(len(df))
         self.table_dp_preview.setColumnCount(len(df.columns))
@@ -1265,6 +1319,7 @@ class MainWindow(QMainWindow):
                 self.table_dp_preview.setItem(i, j, item)
 
         self.table_dp_preview.resizeColumnsToContents()
+
 
     def clear_dataset(self):
         """Clear the Data Processing dataset from UI and memory."""
@@ -1281,6 +1336,28 @@ class MainWindow(QMainWindow):
         self.label_dp_preview.setText("Dataset preview:")
         self.label_dataset_preview.setText("Dataset preview:")
         self.btn_clear_dataset.setEnabled(False)
+
+    def get_data_processing_params(self) -> dict:
+        """Return a dict with data-processing parameter values from the UI."""
+        try:
+            params = {
+                'max_colinearity': float(self.spin_max_col.value()),
+                'max_missing': float(self.spin_max_missing.value()),
+                'noise_level': float(self.spin_noise.value()),
+                'random_seed': int(self.spin_dp_seed.value()),
+                'augment': bool(self.chk_augment.isChecked()),
+                'apply_smotenc': bool(self.chk_smotenc.isChecked())
+            }
+            return params
+        except Exception:
+            return {
+                'max_colinearity': 0.95,
+                'max_missing': 0.2,
+                'noise_level': 0.0,
+                'random_seed': 42,
+                'augment': False,
+                'apply_smotenc': False
+            }
 
     def load_current_dataset_page(self):
         """Render current dataset page into the QTableWidget and update nav state."""
