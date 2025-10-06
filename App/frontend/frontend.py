@@ -7,6 +7,8 @@ from PyQt5.QtGui import *
 import pandas as pd
 import os
 from backend.analysis import dataio
+from backend.cleaning import pipeline
+import tempfile
 import time
 
 
@@ -180,6 +182,133 @@ class MainWindow(QMainWindow):
         # QTabWidget para las pestañas
         self.tabWidget = QTabWidget(self.centralwidget)
         self.tabWidget.setObjectName("tabWidget")
+
+        # ========== PESTAÑA DE DATA PROCESSING (NEW, LEFT-MOST) ==========
+        self.tabDataProcessing = QWidget()
+        self.tabDataProcessing.setObjectName("tabDataProcessing")
+        self.dpLayout = QVBoxLayout(self.tabDataProcessing)
+
+        self.labelDataProcessing = QLabel("Data Processing:")
+        self.labelDataProcessing.setFont(QFont("Arial", 12))
+        self.labelDataProcessing.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.dpLayout.addWidget(self.labelDataProcessing)
+
+        # Controls: select file, load file
+        self.dp_controls_frame = QFrame()
+        self.dp_controls_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dp_controls_frame.setLineWidth(2)
+        self.dp_controls_layout = QHBoxLayout(self.dp_controls_frame)
+
+        self.dataset_path_label = QLabel("<no file selected>")
+        self.dataset_path_label.setMinimumWidth(300)
+        self.dp_controls_layout.addWidget(self.dataset_path_label)
+
+        self.btn_select_dataset = QPushButton('Select Dataset')
+        self.btn_select_dataset.clicked.connect(self.select_dataset_file)
+        self.dp_controls_layout.addWidget(self.btn_select_dataset)
+
+        self.btn_load_dataset = QPushButton('Load Dataset')
+        self.btn_load_dataset.clicked.connect(self.load_dataset_clicked)
+        self.btn_load_dataset.setEnabled(False)
+        self.dp_controls_layout.addWidget(self.btn_load_dataset)
+
+        # Run pipeline button (uses Data Processing parameters)
+        self.btn_run_pipeline = QPushButton('Run Pipeline')
+        self.btn_run_pipeline.clicked.connect(self.run_pipeline_clicked)
+        self.btn_run_pipeline.setEnabled(False)
+        self.dp_controls_layout.addWidget(self.btn_run_pipeline)
+
+        self.btn_clear_dataset = QPushButton('Clear Dataset')
+        self.btn_clear_dataset.clicked.connect(self.clear_dataset)
+        self.btn_clear_dataset.setEnabled(False)
+        self.dp_controls_layout.addWidget(self.btn_clear_dataset)
+
+        self.dp_controls_layout.addStretch()
+        self.dpLayout.addWidget(self.dp_controls_frame)
+
+        # Parameter controls for Data Processing
+        self.dp_params_frame = QFrame()
+        self.dp_params_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dp_params_frame.setLineWidth(2)
+        self.dp_params_layout = QGridLayout(self.dp_params_frame)
+
+        # MAX COLINEARITY (0.0 - 1.0)
+        lbl_col = QLabel("MAX COLINEARITY:")
+        self.dp_params_layout.addWidget(lbl_col, 0, 0)
+        self.spin_max_col = QDoubleSpinBox()
+        self.spin_max_col.setRange(0.0, 1.0)
+        self.spin_max_col.setSingleStep(0.01)
+        self.spin_max_col.setValue(0.95)
+        self.dp_params_layout.addWidget(self.spin_max_col, 0, 1)
+
+        # MAX MISSING VALUES (fraction 0.0 - 1.0)
+        lbl_miss = QLabel("MAX MISSING VALUES:")
+        self.dp_params_layout.addWidget(lbl_miss, 0, 2)
+        self.spin_max_missing = QDoubleSpinBox()
+        self.spin_max_missing.setRange(0.0, 1.0)
+        self.spin_max_missing.setSingleStep(0.01)
+        self.spin_max_missing.setValue(0.2)
+        self.dp_params_layout.addWidget(self.spin_max_missing, 0, 3)
+
+        # NOISE LEVEL (fraction)
+        lbl_noise = QLabel("NOISE LEVEL:")
+        self.dp_params_layout.addWidget(lbl_noise, 1, 0)
+        self.spin_noise = QDoubleSpinBox()
+        self.spin_noise.setRange(0.0, 1.0)
+        self.spin_noise.setSingleStep(0.01)
+        self.spin_noise.setValue(0.0)
+        self.dp_params_layout.addWidget(self.spin_noise, 1, 1)
+
+        # RANDOM SEED
+        lbl_seed = QLabel("RANDOM SEED:")
+        self.dp_params_layout.addWidget(lbl_seed, 1, 2)
+        self.spin_dp_seed = QSpinBox()
+        self.spin_dp_seed.setRange(-1, 999999)
+        self.spin_dp_seed.setValue(42)
+        self.dp_params_layout.addWidget(self.spin_dp_seed, 1, 3)
+
+        # AUGMENT checkbox
+        self.chk_augment = QCheckBox("AUGMENT")
+        self.chk_augment.setChecked(False)
+        self.dp_params_layout.addWidget(self.chk_augment, 2, 0)
+
+        # SEPARATE CANDIDATES checkbox (new)
+        self.chk_separate_candidates = QCheckBox("Separate candidates")
+        self.chk_separate_candidates.setChecked(True)
+        self.chk_separate_candidates.setToolTip("When checked, candidate rows (koi_disposition==0) will be saved separately by the pipeline run")
+        self.dp_params_layout.addWidget(self.chk_separate_candidates, 2, 2)
+
+        # APPLY SMOTENC checkbox
+        self.chk_smotenc = QCheckBox("APPLY SMOTENC")
+        self.chk_smotenc.setChecked(False)
+        self.dp_params_layout.addWidget(self.chk_smotenc, 2, 1)
+
+        self.dpLayout.addWidget(self.dp_params_frame)
+
+        # Preview table
+        self.dp_preview_frame = QFrame()
+        self.dp_preview_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
+        self.dp_preview_frame.setLineWidth(2)
+        self.dp_preview_layout = QVBoxLayout(self.dp_preview_frame)
+
+        self.label_dp_preview = QLabel("Dataset preview (first 50 rows):")
+        self.dp_preview_layout.addWidget(self.label_dp_preview)
+
+        # smaller preview table to reduce UI footprint
+        self.table_dp_preview = QTableWidget()
+        self.table_dp_preview.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table_dp_preview.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table_dp_preview.setAlternatingRowColors(True)
+        self.table_dp_preview.setMaximumHeight(200)
+        self.dp_preview_layout.addWidget(self.table_dp_preview)
+
+        self.dpLayout.addWidget(self.dp_preview_frame)
+
+        # Dataset storage
+        self.Dataset = None  # pandas DataFrame loaded via Data Processing tab
+
+        # Insert Data Processing as the first tab
+        self.tabWidget.addTab(self.tabDataProcessing, "Data Processing")
         
         # ========== PESTAÑA DE MODELOS ==========
         self.tabModelos = QWidget()
@@ -1099,7 +1228,12 @@ class MainWindow(QMainWindow):
             return {'n_estimators': 100, 'max_depth': None, 'random_state': None, 'n_jobs': 1}
 
     def select_dataset_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select dataset CSV", "", "CSV Files (*.csv);;All files (*)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select dataset file",
+            "",
+            "Table files (*.csv *.tsv *.tab *.vot *.votable *.xml *.tbl);;CSV Files (*.csv);;All files (*)"
+        )
         if not file_path:
             return
         self._dataset_path = file_path
@@ -1139,9 +1273,31 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", f"Failed to load dataset:\n{msg}")
             return
 
+        # Store dataset for Data Processing tab and training preview
         self._dataset_df = df
+        self.Dataset = df.copy()
         self.statusbar.showMessage(f"Dataset loaded: {len(df)} rows", 2000)
-        self.display_dataset_preview(df)
+
+        # Display in both dataset preview (training tab) and Data Processing preview
+        try:
+            self.display_dataset_preview(df)
+        except Exception:
+            pass
+        try:
+            self.display_dp_preview(df)
+        except Exception:
+            pass
+
+        # Enable clear button on Data Processing tab
+        try:
+            self.btn_clear_dataset.setEnabled(True)
+            # allow running pipeline after dataset is loaded
+            try:
+                self.btn_run_pipeline.setEnabled(True)
+            except Exception:
+                pass
+        except Exception:
+            pass
 
     def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
         """Store the dataset and render page 0 into the preview table."""
@@ -1163,6 +1319,69 @@ class MainWindow(QMainWindow):
             self.dataset_pagination_widget.setVisible(False)
 
         self.load_current_dataset_page()
+
+    def display_dp_preview(self, dataframe: pd.DataFrame, max_rows: int = 50):
+        """Render a small preview of the Data Processing dataset into the DP preview table."""
+        if dataframe is None or dataframe.empty:
+            self.Dataset = None
+            self.table_dp_preview.setRowCount(0)
+            self.table_dp_preview.setColumnCount(0)
+            return
+        df = dataframe if len(dataframe) <= max_rows else dataframe.head(max_rows)
+        self.table_dp_preview.setRowCount(len(df))
+        self.table_dp_preview.setColumnCount(len(df.columns))
+        self.table_dp_preview.setHorizontalHeaderLabels(df.columns.tolist())
+
+        for i in range(len(df)):
+            for j, col in enumerate(df.columns):
+                item = QTableWidgetItem(str(df.iloc[i, j]))
+                self.table_dp_preview.setItem(i, j, item)
+
+        self.table_dp_preview.resizeColumnsToContents()
+
+
+    def clear_dataset(self):
+        """Clear the Data Processing dataset from UI and memory."""
+        self.Dataset = None
+        # also clear the training-preview dataset variable if it matches
+        try:
+            self._dataset_df = None
+        except Exception:
+            pass
+        self.table_dp_preview.setRowCount(0)
+        self.table_dp_preview.setColumnCount(0)
+        self.table_dataset_preview.setRowCount(0)
+        self.table_dataset_preview.setColumnCount(0)
+        self.label_dp_preview.setText("Dataset preview:")
+        self.label_dataset_preview.setText("Dataset preview:")
+        self.btn_clear_dataset.setEnabled(False)
+        try:
+            self.btn_run_pipeline.setEnabled(False)
+        except Exception:
+            pass
+
+    def get_data_processing_params(self) -> dict:
+        """Return a dict with data-processing parameter values from the UI."""
+        try:
+            params = {
+                'max_colinearity': float(self.spin_max_col.value()),
+                'max_missing': float(self.spin_max_missing.value()),
+                'noise_level': float(self.spin_noise.value()),
+                'random_seed': int(self.spin_dp_seed.value()),
+                'augment': bool(self.chk_augment.isChecked()),
+                'separate_candidates': bool(self.chk_separate_candidates.isChecked()),
+                'apply_smotenc': bool(self.chk_smotenc.isChecked())
+            }
+            return params
+        except Exception:
+            return {
+                'max_colinearity': 0.95,
+                'max_missing': 0.2,
+                'noise_level': 0.0,
+                'random_seed': 42,
+                'augment': False,
+                'apply_smotenc': False
+            }
 
     def load_current_dataset_page(self):
         """Render current dataset page into the QTableWidget and update nav state."""
@@ -1220,6 +1439,202 @@ class MainWindow(QMainWindow):
             total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
             self._dataset_current_page = total_pages - 1
             self.load_current_dataset_page()
+
+    def run_pipeline_clicked(self):
+        """Collect parameters from the Data Processing controls, run the cleaning
+        pipeline on the currently loaded dataset (or a default local file),
+        and write out features/labels and candidate files when applicable.
+
+        The produced CSV paths are placed in a temporary directory and the
+        Train tab's selectors/labels are updated so the user can start training.
+        """
+        # Determine source dataframe: prefer the in-memory Dataset, otherwise try to load koi_exoplanets
+        df = getattr(self, 'Dataset', None)
+        if df is None:
+            # Try default data file locations (prefer App/data then analysis/data)
+            candidates = [
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'koi_exoplanets.csv'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'analysis', 'data', 'koi_exoplanets.csv'),
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'analysis', 'data', 'koi_exoplanets.csv')
+            ]
+            found = None
+            for p in candidates:
+                p = os.path.normpath(p)
+                if os.path.exists(p):
+                    found = p
+                    break
+            if found is None:
+                QMessageBox.warning(self, "No data", "No dataset loaded and default koi_exoplanets.csv not found.")
+                return
+            df, status, msg = dataio.loadcsvfile(found)
+            if status != 1 or df is None:
+                QMessageBox.critical(self, "Load failed", f"Failed to load default dataset:\n{msg}")
+                return
+
+        # Gather parameters from UI
+        params = self.get_data_processing_params()
+        apply_scaler = True  # default: apply scaler for processing preview
+        apply_noise = bool(params.get('augment', False))
+        apply_smotenc = bool(params.get('apply_smotenc', False))
+
+        try:
+            features_df, labels_df = pipeline(
+                df.copy(),
+                random_seed=int(params.get('random_seed', 42)),
+                noise_level=float(params.get('noise_level', 0.01)),
+                max_missing_values=float(params.get('max_missing', 0.5)),
+                max_collinearity=float(params.get('max_colinearity', 0.80)),
+                apply_scaler=apply_scaler,
+                apply_noise=apply_noise,
+                apply_smotenc=apply_smotenc,
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Pipeline error", f"Error running pipeline: {e}")
+            return
+
+        # Prompt user where to save outputs instead of using a temp dir.
+        params = params if 'params' in locals() else self.get_data_processing_params()
+        separate = bool(params.get('separate_candidates', True))
+
+        features_path = None
+        labels_path = None
+        cand_feat_path = None
+        cand_lab_path = None
+
+        try:
+            # If separation requested and koi_disposition exists, run pipeline separately
+            if separate and 'koi_disposition' in df.columns:
+                candidates_mask = (df['koi_disposition'] == 0)
+                noncand_df = df[~candidates_mask].copy()
+                cand_df = df[candidates_mask].copy()
+
+                # Run pipeline on non-candidates
+                try:
+                    noncand_features, noncand_labels = pipeline(
+                        noncand_df,
+                        random_seed=int(params.get('random_seed', 42)),
+                        noise_level=float(params.get('noise_level', 0.0)),
+                        max_missing_values=float(params.get('max_missing', 0.2)),
+                        max_collinearity=float(params.get('max_colinearity', 0.95)),
+                        apply_scaler=apply_scaler,
+                        apply_noise=apply_noise,
+                        apply_smotenc=apply_smotenc,
+                    )
+                except Exception as e:
+                    QMessageBox.critical(self, "Pipeline error", f"Error running pipeline on non-candidates: {e}")
+                    return
+
+                # Run pipeline on candidates (no SMOTE)
+                try:
+                    cand_features, cand_labels = pipeline(
+                        cand_df,
+                        random_seed=int(params.get('random_seed', 42)),
+                        noise_level=float(params.get('noise_level', 0.0)),
+                        max_missing_values=float(params.get('max_missing', 0.2)),
+                        max_collinearity=float(params.get('max_colinearity', 0.95)),
+                        apply_scaler=apply_scaler,
+                        apply_noise=apply_noise,
+                        apply_smotenc=False,
+                    )
+                except Exception as e:
+                    QMessageBox.critical(self, "Pipeline error", f"Error running pipeline on candidates: {e}")
+                    return
+
+                # Prompt user to save four files: noncandidate features/labels then candidate features/labels
+                nonfeat_path, _ = QFileDialog.getSaveFileName(self, "Save non-candidate features CSV", "noncandidate_features.csv", "CSV files (*.csv);;All files (*)")
+                if not nonfeat_path:
+                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
+                    return
+                nonlab_path, _ = QFileDialog.getSaveFileName(self, "Save non-candidate labels CSV", "noncandidate_labels.csv", "CSV files (*.csv);;All files (*)")
+                if not nonlab_path:
+                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
+                    return
+                candfeat_path, _ = QFileDialog.getSaveFileName(self, "Save candidate features CSV", "candidate_features.csv", "CSV files (*.csv);;All files (*)")
+                if not candfeat_path:
+                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
+                    return
+                candlab_path, _ = QFileDialog.getSaveFileName(self, "Save candidate labels CSV", "candidate_labels.csv", "CSV files (*.csv);;All files (*)")
+                if not candlab_path:
+                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
+                    return
+
+                # Attempt to write the four files
+                try:
+                    noncand_features.to_csv(nonfeat_path, index=False)
+                    noncand_labels.to_csv(nonlab_path, index=False)
+                    cand_features.to_csv(candfeat_path, index=False)
+                    cand_labels.to_csv(candlab_path, index=False)
+                except Exception as e:
+                    QMessageBox.critical(self, "Save error", f"Failed to write pipeline outputs: {e}")
+                    return
+
+                # For training default, set the non-candidate files (so training uses non-candidate set)
+                features_path = nonfeat_path
+                labels_path = nonlab_path
+                cand_feat_path = candfeat_path
+                cand_lab_path = candlab_path
+
+                # expose the in-memory dfs for preview
+                features_df = noncand_features
+                labels_df = noncand_labels
+
+            else:
+                # Single run (no separation) - prompt two save dialogs
+                feat_path, _ = QFileDialog.getSaveFileName(self, "Save features CSV", "features.csv", "CSV files (*.csv);;All files (*)")
+                if not feat_path:
+                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
+                    return
+                lab_path, _ = QFileDialog.getSaveFileName(self, "Save labels CSV", "labels.csv", "CSV files (*.csv);;All files (*)")
+                if not lab_path:
+                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
+                    return
+
+                try:
+                    features_df.to_csv(feat_path, index=False)
+                    labels_df.to_csv(lab_path, index=False)
+                except Exception as e:
+                    QMessageBox.critical(self, "Save error", f"Failed to write pipeline outputs: {e}")
+                    return
+
+                features_path = feat_path
+                labels_path = lab_path
+
+        except Exception as e:
+            QMessageBox.critical(self, "Pipeline/Save error", f"Unexpected error while saving pipeline outputs: {e}")
+            return
+
+        # Update Train tab selectors so user can easily run training
+        try:
+            self._features_path = features_path
+            self._labels_path = labels_path
+            self.features_path_label.setText(os.path.basename(features_path))
+            self.labels_path_label.setText(os.path.basename(labels_path))
+            # enable load buttons
+            self.btn_load_features.setEnabled(True)
+            self.btn_load_labels.setEnabled(True)
+            # also show previews directly
+            self._features_df = features_df
+            self._labels_df = labels_df
+            self.display_dataset_preview(features_df)
+            self.display_labels_preview(labels_df)
+            self.btn_start_training.setEnabled(True)
+        except Exception:
+            pass
+
+        # Construct a user-friendly completion message listing saved files
+        saved_paths = []
+        if features_path:
+            saved_paths.append(f"features: {features_path}")
+        if labels_path:
+            saved_paths.append(f"labels: {labels_path}")
+        if cand_feat_path:
+            saved_paths.append(f"candidate features: {cand_feat_path}")
+        if cand_lab_path:
+            saved_paths.append(f"candidate labels: {cand_lab_path}")
+
+        msg = "Pipeline completed. Saved: " + ", ".join(saved_paths) if saved_paths else "Pipeline completed. No files were saved."
+        self.statusbar.showMessage(msg, 4000)
+        QMessageBox.information(self, "Pipeline complete", msg)
     
     def add_batch_info(self, batch_info: dict):
         item_text = f"Batch {batch_info['batch_id']}.  Length {batch_info['batch_length']}  Confirmed {batch_info['confirmed']}  Rejected {batch_info['rejected']}"
