@@ -1,4 +1,4 @@
-Features (used for training & prediction)
+Features (used for training & prediction in the "App/PreTrainedModels/noncand37.joblib")
 
 The following columns are required for the model:
 ```ra, dec, koi_gmag, koi_count, koi_num_transits,
@@ -21,3 +21,13 @@ You must provide those seperately in .csv in the Model Training tab and then tra
 To use it to predict, load a .csv with columns mentioned in the Model Prediction tab through the Add Batch and load the model then hit Start Prediction
 
 If you desire to visualize the orbit, load the raw data from the KOI dataset from a .csv, choose the planet below and click the button
+
+For example to train the noncand37.joblib use:
+App/data/TestingProcessedData/non_candidates_features37.csv
+App/data/TestingProcessedData/non_candidates_label37.csv
+
+To use it:
+App/data/TestingProcessedData/candidates_features37.csv
+
+And in general to be able to see exoplantes you must provide raw data such as:
+App/data/koi_exoplanets_(rawdata).csv
