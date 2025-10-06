@@ -340,6 +340,7 @@ class MainWindow(QMainWindow):
         self.lista_archivos.itemSelectionChanged.connect(self.on_batch_selected)
         self.frame_layout.addWidget(self.lista_archivos)
         
+        
         # Botones para gestionar archivos
         self.buttons_layout = QHBoxLayout()
         
@@ -383,6 +384,8 @@ class MainWindow(QMainWindow):
         self.data_viewer_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.data_viewer_frame.setLineWidth(2)
         self.data_viewer_frame.setMinimumHeight(200)
+        
+    
         
         # Layout para el frame de datos
         self.data_viewer_layout = QVBoxLayout(self.data_viewer_frame)
@@ -442,22 +445,7 @@ class MainWindow(QMainWindow):
         self.table_exoplanets.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_exoplanets.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_exoplanets.setAlternatingRowColors(True)
-        # Connect row selection to enable orbit button
-        self.table_exoplanets.itemSelectionChanged.connect(self.on_exoplanet_row_selected)
         self.data_viewer_layout.addWidget(self.table_exoplanets)
-        
-        # Add orbit visualization button below table
-        self.orbit_button_layout = QHBoxLayout()
-        self.btn_visualize_orbit = QPushButton('🌍 Visualize Orbit')
-        self.btn_visualize_orbit.setEnabled(False)
-        self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
-        
-        self.orbit_button_layout.addStretch()
-        self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
-        self.orbit_button_layout.addStretch()
-        self.data_viewer_layout.addLayout(self.orbit_button_layout)
-        
-        self.modelosLayout.addWidget(self.data_viewer_frame)
         
         # ========== PESTAÑA DE TRAIN (NEW) ==========
         self.tabTrain = QWidget()
@@ -812,7 +800,22 @@ class MainWindow(QMainWindow):
         self.table_database.setSortingEnabled(False)
         self.db_viewer_layout.addWidget(self.table_database)
         
+        # Connect row selection to enable orbit button
+        self.table_database.itemSelectionChanged.connect(self.on_exoplanet_row_selected)
+        
+        # Add orbit visualization button below table
+        self.orbit_button_layout = QHBoxLayout()
+        self.btn_visualize_orbit = QPushButton('🌌 Visualize Orbit')
+        self.btn_visualize_orbit.setEnabled(False)
+        self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
+        self.orbit_button_layout.addStretch()
+        self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
+        self.orbit_button_layout.addStretch()
+        self.db_viewer_layout.addLayout(self.orbit_button_layout)
+        
+        
         self.datosLayout.addWidget(self.db_viewer_frame)
+        self.modelosLayout.addWidget(self.data_viewer_frame)
         
         # Rename 'Data' tab to 'Visualize'
         self.tabWidget.addTab(self.tabDatos, "DataBase View")
@@ -898,7 +901,7 @@ class MainWindow(QMainWindow):
     
     def on_exoplanet_row_selected(self):
         """Enable orbit visualization button when a row is selected in the table."""
-        selected_items = self.table_exoplanets.selectedItems()
+        selected_items = self.table_database.selectedItems()
         self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.visualization_dataframe is not None)
     
     def open_orbit_visualization(self):
@@ -907,7 +910,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "No exoplanet data loaded.")
             return
         
-        selected_rows = self.table_exoplanets.selectionModel().selectedRows()
+        selected_rows = self.table_database.selectionModel().selectedRows()
         if not selected_rows:
             QMessageBox.warning(self, "No Selection", "Please select an exoplanet row to visualize.")
             return
