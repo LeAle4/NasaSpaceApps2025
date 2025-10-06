@@ -8,9 +8,6 @@ import pandas as pd
 import os
 from backend.analysis import dataio
 from backend.cleaning import pipeline
-import tempfile
-import time
-
 
 class DataLoaderThread(QThread):
     """Background thread to load a DataFrame slice without blocking the UI.
@@ -343,6 +340,7 @@ class MainWindow(QMainWindow):
         self.lista_archivos.itemSelectionChanged.connect(self.on_batch_selected)
         self.frame_layout.addWidget(self.lista_archivos)
         
+        
         # Botones para gestionar archivos
         self.buttons_layout = QHBoxLayout()
         
@@ -386,6 +384,8 @@ class MainWindow(QMainWindow):
         self.data_viewer_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.data_viewer_frame.setLineWidth(2)
         self.data_viewer_frame.setMinimumHeight(200)
+        
+    
         
         # Layout para el frame de datos
         self.data_viewer_layout = QVBoxLayout(self.data_viewer_frame)
@@ -445,37 +445,7 @@ class MainWindow(QMainWindow):
         self.table_exoplanets.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_exoplanets.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_exoplanets.setAlternatingRowColors(True)
-        # Connect row selection to enable orbit button
-        self.table_exoplanets.itemSelectionChanged.connect(self.on_exoplanet_row_selected)
         self.data_viewer_layout.addWidget(self.table_exoplanets)
-        
-        # Add orbit visualization button below table
-        self.orbit_button_layout = QHBoxLayout()
-        self.btn_visualize_orbit = QPushButton('🌍 Visualize Orbit')
-        self.btn_visualize_orbit.setEnabled(False)
-        self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
-        self.btn_visualize_orbit.setStyleSheet("""
-            QPushButton {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #45a049;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-        """)
-        self.orbit_button_layout.addStretch()
-        self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
-        self.orbit_button_layout.addStretch()
-        self.data_viewer_layout.addLayout(self.orbit_button_layout)
-        
-        self.modelosLayout.addWidget(self.data_viewer_frame)
         
         # ========== PESTAÑA DE TRAIN (NEW) ==========
         self.tabTrain = QWidget()
@@ -830,7 +800,22 @@ class MainWindow(QMainWindow):
         self.table_database.setSortingEnabled(False)
         self.db_viewer_layout.addWidget(self.table_database)
         
+        # Connect row selection to enable orbit button
+        self.table_database.itemSelectionChanged.connect(self.on_exoplanet_row_selected)
+        
+        # Add orbit visualization button below table
+        self.orbit_button_layout = QHBoxLayout()
+        self.btn_visualize_orbit = QPushButton('🌌 Visualize Orbit')
+        self.btn_visualize_orbit.setEnabled(False)
+        self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
+        self.orbit_button_layout.addStretch()
+        self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
+        self.orbit_button_layout.addStretch()
+        self.db_viewer_layout.addLayout(self.orbit_button_layout)
+        
+        
         self.datosLayout.addWidget(self.db_viewer_frame)
+        self.modelosLayout.addWidget(self.data_viewer_frame)
         
         # Rename 'Data' tab to 'Visualize'
         self.tabWidget.addTab(self.tabDatos, "DataBase View")
@@ -916,7 +901,7 @@ class MainWindow(QMainWindow):
     
     def on_exoplanet_row_selected(self):
         """Enable orbit visualization button when a row is selected in the table."""
-        selected_items = self.table_exoplanets.selectedItems()
+        selected_items = self.table_database.selectedItems()
         self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.visualization_dataframe is not None)
     
     def open_orbit_visualization(self):
@@ -925,7 +910,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "No exoplanet data loaded.")
             return
         
-        selected_rows = self.table_exoplanets.selectionModel().selectedRows()
+        selected_rows = self.table_database.selectionModel().selectedRows()
         if not selected_rows:
             QMessageBox.warning(self, "No Selection", "Please select an exoplanet row to visualize.")
             return
@@ -1383,6 +1368,53 @@ class MainWindow(QMainWindow):
                 'apply_smotenc': False
             }
 
+    def _find_koi_disposition_column(self, df: pd.DataFrame) -> str | None:
+        """Try to find a column that represents koi_disposition.
+
+        Returns the column name if found, otherwise None.
+        The search is case-insensitive and ignores surrounding whitespace.
+        """
+        if df is None:
+            return None
+        candidates = [c for c in df.columns]
+        lowered = {c.strip().lower(): c for c in candidates}
+        # common exact name
+        if 'koi_disposition' in lowered:
+            return lowered['koi_disposition']
+        # try alternatives
+        for alt in ('disposition', 'koi disposition', 'koi_dispo', 'koi_state'):
+            if alt in lowered:
+                return lowered[alt]
+        # fallback: look for column names that end with 'disposition'
+        for name in lowered:
+            if name.endswith('disposition'):
+                return lowered[name]
+        return None
+
+    def _candidate_mask_from_column(self, df: pd.DataFrame, col: str) -> pd.Series:
+        """Return a boolean Series marking candidate rows (value == 0).
+
+        Handles numeric and string representations (e.g., '0', 'candidate', 'CAND').
+        """
+        try:
+            series = df[col]
+        except Exception:
+            return pd.Series([False] * len(df), index=df.index)
+
+        # Normalize and try numeric comparison first
+        try:
+            num = pd.to_numeric(series, errors='coerce')
+            mask = (num == 0)
+            if mask.any():
+                return mask.fillna(False)
+        except Exception:
+            pass
+
+        # Fall back to string matching for common candidate indicators
+        s = series.astype(str).str.strip().str.lower()
+        mask = s.isin(['0', 'candidate', 'cand', 'c', 'unknown'])
+        return mask
+
     def load_current_dataset_page(self):
         """Render current dataset page into the QTableWidget and update nav state."""
         if self._dataset_df is None or self._dataset_df.empty:
@@ -1477,20 +1509,9 @@ class MainWindow(QMainWindow):
         apply_noise = bool(params.get('augment', False))
         apply_smotenc = bool(params.get('apply_smotenc', False))
 
-        try:
-            features_df, labels_df = pipeline(
-                df.copy(),
-                random_seed=int(params.get('random_seed', 42)),
-                noise_level=float(params.get('noise_level', 0.01)),
-                max_missing_values=float(params.get('max_missing', 0.5)),
-                max_collinearity=float(params.get('max_colinearity', 0.80)),
-                apply_scaler=apply_scaler,
-                apply_noise=apply_noise,
-                apply_smotenc=apply_smotenc,
-            )
-        except Exception as e:
-            QMessageBox.critical(self, "Pipeline error", f"Error running pipeline: {e}")
-            return
+        # We'll run the pipeline after deciding whether to separate candidates
+        features_df = None
+        labels_df = None
 
         # Prompt user where to save outputs instead of using a temp dir.
         params = params if 'params' in locals() else self.get_data_processing_params()
@@ -1502,11 +1523,33 @@ class MainWindow(QMainWindow):
         cand_lab_path = None
 
         try:
-            # If separation requested and koi_disposition exists, run pipeline separately
-            if separate and 'koi_disposition' in df.columns:
-                candidates_mask = (df['koi_disposition'] == 0)
-                noncand_df = df[~candidates_mask].copy()
-                cand_df = df[candidates_mask].copy()
+            # If separation requested, try to find a koi_disposition-like column robustly
+            if separate:
+                label_col = self._find_koi_disposition_column(df)
+                # fallback: if we couldn't find a label column by name, scan columns for candidate-like values
+                if label_col is None:
+                    for col in df.columns:
+                        try:
+                            mask = self._candidate_mask_from_column(df, col)
+                        except Exception:
+                            mask = pd.Series([False] * len(df), index=df.index)
+                        if mask.any():
+                            label_col = col
+                            break
+            else:
+                label_col = None
+
+            if label_col is not None:
+                candidates_mask = self._candidate_mask_from_column(df, label_col)
+                if candidates_mask.any():
+                    noncand_df = df[~candidates_mask].copy()
+                    cand_df = df[candidates_mask].copy()
+                else:
+                    # no detected candidate rows
+                    QMessageBox.information(self, "No candidates found", "No candidate rows (koi_disposition==0) were detected in the dataset. Running a single pipeline on the full dataset.")
+                    label_col = None
+
+            if label_col is not None:
 
                 # Run pipeline on non-candidates
                 try:

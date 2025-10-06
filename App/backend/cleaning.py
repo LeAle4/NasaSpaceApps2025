@@ -39,7 +39,7 @@ def separate_candidates(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: DataFrame of candidate entries.
     """
-    return df[df[LABEL_COL] == 0]
+    return df[df[LABEL_COL] == STRING_CAT_REPLACEMENT['CANDIDATE']]
 
 def split_features_labels(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Splits the DataFrame into features and labels.
@@ -68,7 +68,10 @@ def replace_string_values(df: pd.DataFrame, replacements: dict) -> pd.DataFrame:
         replacements (dict): A dictionary mapping old values to new values.
     Returns:
         pd.DataFrame: The DataFrame with string values replaced."""
-    df = df.replace(replacements)
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", message="Downcasting behavior in `replace` is deprecated", category=FutureWarning)
+        df = df.replace(replacements)
     return df
 def discard_empty_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Discards columns with all missing values from the DataFrame.
