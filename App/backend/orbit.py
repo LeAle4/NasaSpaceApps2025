@@ -828,6 +828,8 @@ def create_child_widget(df, row_index=0, speed=1.0, show_solar_system=True, show
 
     Returns context dict (see render_koi_orbit) and does not start the global event loop.
     """
+    print("Creating embedded exoplanet orbit widget...")
+    print(df)
     return render_koi_orbit(df, row_index=row_index, speed=speed,
                              show_solar_system=show_solar_system,
                              show_habitable_zone=show_habitable_zone,
