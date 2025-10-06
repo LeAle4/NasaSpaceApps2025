@@ -7,7 +7,8 @@ from PyQt5.QtGui import *
 import pandas as pd
 import os
 from backend.analysis import dataio
-from backend.cleaning import pipeline
+import time
+
 
 class DataLoaderThread(QThread):
     """Background thread to load a DataFrame slice without blocking the UI.
@@ -213,7 +214,6 @@ class MainWindow(QMainWindow):
         self.lista_archivos.itemSelectionChanged.connect(self.on_batch_selected)
         self.frame_layout.addWidget(self.lista_archivos)
         
-        
         # Botones para gestionar archivos
         self.buttons_layout = QHBoxLayout()
         
@@ -257,8 +257,6 @@ class MainWindow(QMainWindow):
         self.data_viewer_frame.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.data_viewer_frame.setLineWidth(2)
         self.data_viewer_frame.setMinimumHeight(200)
-        
-    
         
         # Layout para el frame de datos
         self.data_viewer_layout = QVBoxLayout(self.data_viewer_frame)
@@ -318,7 +316,37 @@ class MainWindow(QMainWindow):
         self.table_exoplanets.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table_exoplanets.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_exoplanets.setAlternatingRowColors(True)
+        # Connect row selection to enable orbit button
+        self.table_exoplanets.itemSelectionChanged.connect(self.on_exoplanet_row_selected)
         self.data_viewer_layout.addWidget(self.table_exoplanets)
+        
+        # Add orbit visualization button below table
+        self.orbit_button_layout = QHBoxLayout()
+        self.btn_visualize_orbit = QPushButton('🌍 Visualize Orbit')
+        self.btn_visualize_orbit.setEnabled(False)
+        self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
+        self.btn_visualize_orbit.setStyleSheet("""
+            QPushButton {
+                background-color: #4CAF50;
+                color: white;
+                font-weight: bold;
+                padding: 8px 16px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #45a049;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+                color: #666666;
+            }
+        """)
+        self.orbit_button_layout.addStretch()
+        self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
+        self.orbit_button_layout.addStretch()
+        self.data_viewer_layout.addLayout(self.orbit_button_layout)
+        
+        self.modelosLayout.addWidget(self.data_viewer_frame)
         
         # ========== PESTAÑA DE TRAIN (NEW) ==========
         self.tabTrain = QWidget()
@@ -673,22 +701,7 @@ class MainWindow(QMainWindow):
         self.table_database.setSortingEnabled(False)
         self.db_viewer_layout.addWidget(self.table_database)
         
-        # Connect row selection to enable orbit button
-        self.table_database.itemSelectionChanged.connect(self.on_exoplanet_row_selected)
-        
-        # Add orbit visualization button below table
-        self.orbit_button_layout = QHBoxLayout()
-        self.btn_visualize_orbit = QPushButton('🌌 Visualize Orbit')
-        self.btn_visualize_orbit.setEnabled(False)
-        self.btn_visualize_orbit.clicked.connect(self.open_orbit_visualization)
-        self.orbit_button_layout.addStretch()
-        self.orbit_button_layout.addWidget(self.btn_visualize_orbit)
-        self.orbit_button_layout.addStretch()
-        self.db_viewer_layout.addLayout(self.orbit_button_layout)
-        
-        
         self.datosLayout.addWidget(self.db_viewer_frame)
-        self.modelosLayout.addWidget(self.data_viewer_frame)
         
         # Rename 'Data' tab to 'Visualize'
         self.tabWidget.addTab(self.tabDatos, "DataBase View")
@@ -774,7 +787,7 @@ class MainWindow(QMainWindow):
     
     def on_exoplanet_row_selected(self):
         """Enable orbit visualization button when a row is selected in the table."""
-        selected_items = self.table_database.selectedItems()
+        selected_items = self.table_exoplanets.selectedItems()
         self.btn_visualize_orbit.setEnabled(len(selected_items) > 0 and self.visualization_dataframe is not None)
     
     def open_orbit_visualization(self):
@@ -783,7 +796,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Data", "No exoplanet data loaded.")
             return
         
-        selected_rows = self.table_database.selectionModel().selectedRows()
+        selected_rows = self.table_exoplanets.selectionModel().selectedRows()
         if not selected_rows:
             QMessageBox.warning(self, "No Selection", "Please select an exoplanet row to visualize.")
             return
@@ -1086,12 +1099,7 @@ class MainWindow(QMainWindow):
             return {'n_estimators': 100, 'max_depth': None, 'random_state': None, 'n_jobs': 1}
 
     def select_dataset_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Select dataset file",
-            "",
-            "Table files (*.csv *.tsv *.tab *.vot *.votable *.xml *.tbl);;CSV Files (*.csv);;All files (*)"
-        )
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select dataset CSV", "", "CSV Files (*.csv);;All files (*)")
         if not file_path:
             return
         self._dataset_path = file_path
@@ -1131,31 +1139,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Load failed", f"Failed to load dataset:\n{msg}")
             return
 
-        # Store dataset for Data Processing tab and training preview
         self._dataset_df = df
-        self.Dataset = df.copy()
         self.statusbar.showMessage(f"Dataset loaded: {len(df)} rows", 2000)
-
-        # Display in both dataset preview (training tab) and Data Processing preview
-        try:
-            self.display_dataset_preview(df)
-        except Exception:
-            pass
-        try:
-            self.display_dp_preview(df)
-        except Exception:
-            pass
-
-        # Enable clear button on Data Processing tab
-        try:
-            self.btn_clear_dataset.setEnabled(True)
-            # allow running pipeline after dataset is loaded
-            try:
-                self.btn_run_pipeline.setEnabled(True)
-            except Exception:
-                pass
-        except Exception:
-            pass
+        self.display_dataset_preview(df)
 
     def display_dataset_preview(self, dataframe: pd.DataFrame, max_rows: int = 200):
         """Store the dataset and render page 0 into the preview table."""
@@ -1177,116 +1163,6 @@ class MainWindow(QMainWindow):
             self.dataset_pagination_widget.setVisible(False)
 
         self.load_current_dataset_page()
-
-    def display_dp_preview(self, dataframe: pd.DataFrame, max_rows: int = 50):
-        """Render a small preview of the Data Processing dataset into the DP preview table."""
-        if dataframe is None or dataframe.empty:
-            self.Dataset = None
-            self.table_dp_preview.setRowCount(0)
-            self.table_dp_preview.setColumnCount(0)
-            return
-        df = dataframe if len(dataframe) <= max_rows else dataframe.head(max_rows)
-        self.table_dp_preview.setRowCount(len(df))
-        self.table_dp_preview.setColumnCount(len(df.columns))
-        self.table_dp_preview.setHorizontalHeaderLabels(df.columns.tolist())
-
-        for i in range(len(df)):
-            for j, col in enumerate(df.columns):
-                item = QTableWidgetItem(str(df.iloc[i, j]))
-                self.table_dp_preview.setItem(i, j, item)
-
-        self.table_dp_preview.resizeColumnsToContents()
-
-
-    def clear_dataset(self):
-        """Clear the Data Processing dataset from UI and memory."""
-        self.Dataset = None
-        # also clear the training-preview dataset variable if it matches
-        try:
-            self._dataset_df = None
-        except Exception:
-            pass
-        self.table_dp_preview.setRowCount(0)
-        self.table_dp_preview.setColumnCount(0)
-        self.table_dataset_preview.setRowCount(0)
-        self.table_dataset_preview.setColumnCount(0)
-        self.label_dp_preview.setText("Dataset preview:")
-        self.label_dataset_preview.setText("Dataset preview:")
-        self.btn_clear_dataset.setEnabled(False)
-        try:
-            self.btn_run_pipeline.setEnabled(False)
-        except Exception:
-            pass
-
-    def get_data_processing_params(self) -> dict:
-        """Return a dict with data-processing parameter values from the UI."""
-        try:
-            params = {
-                'max_colinearity': float(self.spin_max_col.value()),
-                'max_missing': float(self.spin_max_missing.value()),
-                'noise_level': float(self.spin_noise.value()),
-                'random_seed': int(self.spin_dp_seed.value()),
-                'augment': bool(self.chk_augment.isChecked()),
-                'separate_candidates': bool(self.chk_separate_candidates.isChecked()),
-                'apply_smotenc': bool(self.chk_smotenc.isChecked())
-            }
-            return params
-        except Exception:
-            return {
-                'max_colinearity': 0.95,
-                'max_missing': 0.2,
-                'noise_level': 0.0,
-                'random_seed': 42,
-                'augment': False,
-                'apply_smotenc': False
-            }
-
-    def _find_koi_disposition_column(self, df: pd.DataFrame) -> str | None:
-        """Try to find a column that represents koi_disposition.
-
-        Returns the column name if found, otherwise None.
-        The search is case-insensitive and ignores surrounding whitespace.
-        """
-        if df is None:
-            return None
-        candidates = [c for c in df.columns]
-        lowered = {c.strip().lower(): c for c in candidates}
-        # common exact name
-        if 'koi_disposition' in lowered:
-            return lowered['koi_disposition']
-        # try alternatives
-        for alt in ('disposition', 'koi disposition', 'koi_dispo', 'koi_state'):
-            if alt in lowered:
-                return lowered[alt]
-        # fallback: look for column names that end with 'disposition'
-        for name in lowered:
-            if name.endswith('disposition'):
-                return lowered[name]
-        return None
-
-    def _candidate_mask_from_column(self, df: pd.DataFrame, col: str) -> pd.Series:
-        """Return a boolean Series marking candidate rows (value == 0).
-
-        Handles numeric and string representations (e.g., '0', 'candidate', 'CAND').
-        """
-        try:
-            series = df[col]
-        except Exception:
-            return pd.Series([False] * len(df), index=df.index)
-
-        # Normalize and try numeric comparison first
-        try:
-            num = pd.to_numeric(series, errors='coerce')
-            mask = (num == 0)
-            if mask.any():
-                return mask.fillna(False)
-        except Exception:
-            pass
-
-        # Fall back to string matching for common candidate indicators
-        s = series.astype(str).str.strip().str.lower()
-        mask = s.isin(['0', 'candidate', 'cand', 'c', 'unknown'])
-        return mask
 
     def load_current_dataset_page(self):
         """Render current dataset page into the QTableWidget and update nav state."""
@@ -1344,213 +1220,6 @@ class MainWindow(QMainWindow):
             total_pages = (len(self._dataset_df) + self._dataset_rows_per_page - 1) // self._dataset_rows_per_page
             self._dataset_current_page = total_pages - 1
             self.load_current_dataset_page()
-
-    def run_pipeline_clicked(self):
-        """Collect parameters from the Data Processing controls, run the cleaning
-        pipeline on the currently loaded dataset (or a default local file),
-        and write out features/labels and candidate files when applicable.
-
-        The produced CSV paths are placed in a temporary directory and the
-        Train tab's selectors/labels are updated so the user can start training.
-        """
-        # Determine source dataframe: prefer the in-memory Dataset, otherwise try to load koi_exoplanets
-        df = getattr(self, 'Dataset', None)
-        if df is None:
-            # Try default data file locations (prefer App/data then analysis/data)
-            candidates = [
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'koi_exoplanets.csv'),
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'analysis', 'data', 'koi_exoplanets.csv'),
-                os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'analysis', 'data', 'koi_exoplanets.csv')
-            ]
-            found = None
-            for p in candidates:
-                p = os.path.normpath(p)
-                if os.path.exists(p):
-                    found = p
-                    break
-            if found is None:
-                QMessageBox.warning(self, "No data", "No dataset loaded and default koi_exoplanets.csv not found.")
-                return
-            df, status, msg = dataio.loadcsvfile(found)
-            if status != 1 or df is None:
-                QMessageBox.critical(self, "Load failed", f"Failed to load default dataset:\n{msg}")
-                return
-
-        # Gather parameters from UI
-        params = self.get_data_processing_params()
-        apply_scaler = True  # default: apply scaler for processing preview
-        apply_noise = bool(params.get('augment', False))
-        apply_smotenc = bool(params.get('apply_smotenc', False))
-
-        # We'll run the pipeline after deciding whether to separate candidates
-        features_df = None
-        labels_df = None
-
-        # Prompt user where to save outputs instead of using a temp dir.
-        params = params if 'params' in locals() else self.get_data_processing_params()
-        separate = bool(params.get('separate_candidates', True))
-
-        features_path = None
-        labels_path = None
-        cand_feat_path = None
-        cand_lab_path = None
-
-        try:
-            # If separation requested, try to find a koi_disposition-like column robustly
-            if separate:
-                label_col = self._find_koi_disposition_column(df)
-                # fallback: if we couldn't find a label column by name, scan columns for candidate-like values
-                if label_col is None:
-                    for col in df.columns:
-                        try:
-                            mask = self._candidate_mask_from_column(df, col)
-                        except Exception:
-                            mask = pd.Series([False] * len(df), index=df.index)
-                        if mask.any():
-                            label_col = col
-                            break
-            else:
-                label_col = None
-
-            if label_col is not None:
-                candidates_mask = self._candidate_mask_from_column(df, label_col)
-                if candidates_mask.any():
-                    noncand_df = df[~candidates_mask].copy()
-                    cand_df = df[candidates_mask].copy()
-                else:
-                    # no detected candidate rows
-                    QMessageBox.information(self, "No candidates found", "No candidate rows (koi_disposition==0) were detected in the dataset. Running a single pipeline on the full dataset.")
-                    label_col = None
-
-            if label_col is not None:
-
-                # Run pipeline on non-candidates
-                try:
-                    noncand_features, noncand_labels = pipeline(
-                        noncand_df,
-                        random_seed=int(params.get('random_seed', 42)),
-                        noise_level=float(params.get('noise_level', 0.0)),
-                        max_missing_values=float(params.get('max_missing', 0.2)),
-                        max_collinearity=float(params.get('max_colinearity', 0.95)),
-                        apply_scaler=apply_scaler,
-                        apply_noise=apply_noise,
-                        apply_smotenc=apply_smotenc,
-                    )
-                except Exception as e:
-                    QMessageBox.critical(self, "Pipeline error", f"Error running pipeline on non-candidates: {e}")
-                    return
-
-                # Run pipeline on candidates (no SMOTE)
-                try:
-                    cand_features, cand_labels = pipeline(
-                        cand_df,
-                        random_seed=int(params.get('random_seed', 42)),
-                        noise_level=float(params.get('noise_level', 0.0)),
-                        max_missing_values=float(params.get('max_missing', 0.2)),
-                        max_collinearity=float(params.get('max_colinearity', 0.95)),
-                        apply_scaler=apply_scaler,
-                        apply_noise=apply_noise,
-                        apply_smotenc=False,
-                    )
-                except Exception as e:
-                    QMessageBox.critical(self, "Pipeline error", f"Error running pipeline on candidates: {e}")
-                    return
-
-                # Prompt user to save four files: noncandidate features/labels then candidate features/labels
-                nonfeat_path, _ = QFileDialog.getSaveFileName(self, "Save non-candidate features CSV", "noncandidate_features.csv", "CSV files (*.csv);;All files (*)")
-                if not nonfeat_path:
-                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
-                    return
-                nonlab_path, _ = QFileDialog.getSaveFileName(self, "Save non-candidate labels CSV", "noncandidate_labels.csv", "CSV files (*.csv);;All files (*)")
-                if not nonlab_path:
-                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
-                    return
-                candfeat_path, _ = QFileDialog.getSaveFileName(self, "Save candidate features CSV", "candidate_features.csv", "CSV files (*.csv);;All files (*)")
-                if not candfeat_path:
-                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
-                    return
-                candlab_path, _ = QFileDialog.getSaveFileName(self, "Save candidate labels CSV", "candidate_labels.csv", "CSV files (*.csv);;All files (*)")
-                if not candlab_path:
-                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
-                    return
-
-                # Attempt to write the four files
-                try:
-                    noncand_features.to_csv(nonfeat_path, index=False)
-                    noncand_labels.to_csv(nonlab_path, index=False)
-                    cand_features.to_csv(candfeat_path, index=False)
-                    cand_labels.to_csv(candlab_path, index=False)
-                except Exception as e:
-                    QMessageBox.critical(self, "Save error", f"Failed to write pipeline outputs: {e}")
-                    return
-
-                # For training default, set the non-candidate files (so training uses non-candidate set)
-                features_path = nonfeat_path
-                labels_path = nonlab_path
-                cand_feat_path = candfeat_path
-                cand_lab_path = candlab_path
-
-                # expose the in-memory dfs for preview
-                features_df = noncand_features
-                labels_df = noncand_labels
-
-            else:
-                # Single run (no separation) - prompt two save dialogs
-                feat_path, _ = QFileDialog.getSaveFileName(self, "Save features CSV", "features.csv", "CSV files (*.csv);;All files (*)")
-                if not feat_path:
-                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
-                    return
-                lab_path, _ = QFileDialog.getSaveFileName(self, "Save labels CSV", "labels.csv", "CSV files (*.csv);;All files (*)")
-                if not lab_path:
-                    QMessageBox.information(self, "Cancelled", "Save cancelled. Pipeline outputs not saved.")
-                    return
-
-                try:
-                    features_df.to_csv(feat_path, index=False)
-                    labels_df.to_csv(lab_path, index=False)
-                except Exception as e:
-                    QMessageBox.critical(self, "Save error", f"Failed to write pipeline outputs: {e}")
-                    return
-
-                features_path = feat_path
-                labels_path = lab_path
-
-        except Exception as e:
-            QMessageBox.critical(self, "Pipeline/Save error", f"Unexpected error while saving pipeline outputs: {e}")
-            return
-
-        # Update Train tab selectors so user can easily run training
-        try:
-            self._features_path = features_path
-            self._labels_path = labels_path
-            self.features_path_label.setText(os.path.basename(features_path))
-            self.labels_path_label.setText(os.path.basename(labels_path))
-            # enable load buttons
-            self.btn_load_features.setEnabled(True)
-            self.btn_load_labels.setEnabled(True)
-            # also show previews directly
-            self._features_df = features_df
-            self._labels_df = labels_df
-            self.display_dataset_preview(features_df)
-            self.display_labels_preview(labels_df)
-            self.btn_start_training.setEnabled(True)
-        except Exception:
-            pass
-
-        # Construct a user-friendly completion message listing saved files
-        saved_paths = []
-        if features_path:
-            saved_paths.append(f"features: {features_path}")
-        if labels_path:
-            saved_paths.append(f"labels: {labels_path}")
-        if cand_feat_path:
-            saved_paths.append(f"candidate features: {cand_feat_path}")
-        if cand_lab_path:
-            saved_paths.append(f"candidate labels: {cand_lab_path}")
-
-        msg = "Pipeline completed. Saved: " + ", ".join(saved_paths) if saved_paths else "Pipeline completed. No files were saved."
-        self.statusbar.showMessage(msg, 4000)
-        QMessageBox.information(self, "Pipeline complete", msg)
     
     def add_batch_info(self, batch_info: dict):
         item_text = f"Batch {batch_info['batch_id']}.  Length {batch_info['batch_length']}  Confirmed {batch_info['confirmed']}  Rejected {batch_info['rejected']}"
